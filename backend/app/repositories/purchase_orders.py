@@ -1,7 +1,11 @@
-"""Consulta de pedidos; o adaptador em memória é apenas para a demonstração."""
+"""Interface de consulta e adaptador SQLAlchemy para pedidos de compra."""
 
 from typing import Protocol
 
+from sqlalchemy import select
+from sqlalchemy.orm import joinedload, selectinload, sessionmaker
+
+from backend.app.models.purchase_order import PurchaseOrderEntity
 from backend.app.schemas import PurchaseOrder
 
 
@@ -9,40 +13,39 @@ class PurchaseOrderRepository(Protocol):
     def get_by_reference(self, reference: str) -> PurchaseOrder | None: ...
 
 
-class InMemoryPurchaseOrderRepository:
-    """Pedido fictício de docs/01-fluxo-minimo.md.
-
-    Quando houver PostgreSQL, substitua este adaptador por uma implementação
-    desta interface; as rotas não precisam conhecer a origem dos pedidos.
-    """
-
-    def __init__(self) -> None:
-        order = PurchaseOrder.model_validate(
-            {
-                "reference": "PC-2026-0001",
-                "supplier_name": "Metalúrgica Horizonte Ltda.",
-                "supplier_identifier": "FORN-0001",
-                "currency": "BRL",
-                "items": [
-                    {
-                        "code": "ARR-001",
-                        "description": "Arruela zincada M8",
-                        "quantity": "10",
-                        "unit_price": "85.50",
-                        "line_total": "855.00",
-                    },
-                    {
-                        "code": "PAR-002",
-                        "description": "Parafuso sextavado M8",
-                        "quantity": "5",
-                        "unit_price": "79.00",
-                        "line_total": "395.00",
-                    },
-                ],
-                "total": "1250.00",
-            }
-        )
-        self._orders = {order.reference: order}
+class SqlAlchemyPurchaseOrderRepository:
+    def __init__(self, session_factory: sessionmaker) -> None:
+        self._session_factory = session_factory
 
     def get_by_reference(self, reference: str) -> PurchaseOrder | None:
-        return self._orders.get(reference)
+        statement = (
+            select(PurchaseOrderEntity)
+            .options(
+                joinedload(PurchaseOrderEntity.supplier),
+                selectinload(PurchaseOrderEntity.items),
+            )
+            .where(PurchaseOrderEntity.reference == reference)
+        )
+        with self._session_factory() as session:
+            order = session.scalar(statement)
+            if order is None:
+                return None
+            return PurchaseOrder.model_validate(
+                {
+                    "reference": order.reference,
+                    "supplier_name": order.supplier.name,
+                    "supplier_identifier": order.supplier.identifier,
+                    "currency": order.currency,
+                    "items": [
+                        {
+                            "code": item.code,
+                            "description": item.description,
+                            "quantity": format(item.quantity, "f"),
+                            "unit_price": format(item.unit_price, "f"),
+                            "line_total": format(item.line_total, "f"),
+                        }
+                        for item in order.items
+                    ],
+                    "total": format(order.total, "f"),
+                }
+            )

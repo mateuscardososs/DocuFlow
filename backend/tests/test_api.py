@@ -1,9 +1,16 @@
 import json
+import os
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, inspect
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
+from backend.app.models.base import Base
+from backend.app.repositories.purchase_orders import SqlAlchemyPurchaseOrderRepository
+from backend.app.seed_reference_order import seed_reference_order
 from backend.app.schemas import PurchaseOrder
 from backend.app.services.document_processing import (
     DocumentProcessingConfig,
@@ -26,7 +33,7 @@ class StubProvider:
         return self.response
 
 
-def create_client(*, response=None, provider_error=None, max_upload_bytes=10 * 1024 * 1024):
+def create_client(test_case, *, response=None, provider_error=None, max_upload_bytes=10 * 1024 * 1024):
     from backend.app.api.app import create_app
 
     provider = StubProvider(
@@ -39,16 +46,28 @@ def create_client(*, response=None, provider_error=None, max_upload_bytes=10 * 1
     )
     process = Mock(wraps=service.process)
     service.process = process
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(engine, expire_on_commit=False)
+    seed_reference_order(session_factory)
     app = create_app(
         document_processing_service=service,
+        order_repository=SqlAlchemyPurchaseOrderRepository(session_factory),
         max_upload_bytes=max_upload_bytes,
     )
-    return TestClient(app), provider, process
+    client = TestClient(app)
+    test_case.addCleanup(engine.dispose)
+    test_case.addCleanup(client.close)
+    return client, provider, process
 
 
 class ApiTests(unittest.TestCase):
     def test_health_check_returns_ok(self):
-        client, _, _ = create_client()
+        client, _, _ = create_client(self)
 
         response = client.get("/health")
 
@@ -56,7 +75,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json(), {"status": "ok"})
 
     def test_valid_upload_calls_processing_service_and_returns_typed_result(self):
-        client, provider, process = create_client()
+        client, provider, process = create_client(self)
         pdf = make_pdf([REFERENCE_TEXT])
 
         response = client.post(
@@ -83,7 +102,22 @@ class ApiTests(unittest.TestCase):
         from backend.app.api.app import create_app
 
         provider = StubProvider(response=json.dumps(reference_payload(), ensure_ascii=False))
-        client = TestClient(create_app(extraction_provider=provider))
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(engine)
+        session_factory = sessionmaker(engine, expire_on_commit=False)
+        seed_reference_order(session_factory)
+        client = TestClient(
+            create_app(
+                extraction_provider=provider,
+                order_repository=SqlAlchemyPurchaseOrderRepository(session_factory),
+            )
+        )
+        self.addCleanup(engine.dispose)
+        self.addCleanup(client.close)
 
         response = client.post(
             "/documents/analyze",
@@ -94,10 +128,22 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(provider.calls, 1)
 
+    def test_default_repository_uses_database_url_and_sqlalchemy(self):
+        from backend.app.api.app import create_app
+        from backend.app.repositories.purchase_orders import SqlAlchemyPurchaseOrderRepository
+
+        with patch.dict(os.environ, {"DATABASE_URL": "sqlite://"}):
+            app = create_app(extraction_provider=StubProvider())
+
+        self.addCleanup(app.state.database_engine.dispose)
+        self.assertIsInstance(app.state.order_repository, SqlAlchemyPurchaseOrderRepository)
+        self.assertEqual(app.state.database_engine.url.get_backend_name(), "sqlite")
+        self.assertEqual(inspect(app.state.database_engine).get_table_names(), [])
+
     def test_commercial_divergence_is_returned_without_approval(self):
         data = reference_payload()
         data["items"][0]["quantity"]["value"] = "11"
-        client, _, _ = create_client(response=json.dumps(data, ensure_ascii=False))
+        client, _, _ = create_client(self, response=json.dumps(data, ensure_ascii=False))
 
         response = client.post(
             "/documents/analyze",
@@ -115,7 +161,7 @@ class ApiTests(unittest.TestCase):
         )
 
     def test_unsupported_media_type_is_rejected_before_processing(self):
-        client, provider, process = create_client()
+        client, provider, process = create_client(self)
 
         response = client.post(
             "/documents/analyze",
@@ -129,7 +175,7 @@ class ApiTests(unittest.TestCase):
 
     def test_oversized_upload_is_rejected_before_processing(self):
         pdf = make_pdf([REFERENCE_TEXT])
-        client, provider, process = create_client(max_upload_bytes=len(pdf) - 1)
+        client, provider, process = create_client(self, max_upload_bytes=len(pdf) - 1)
 
         response = client.post(
             "/documents/analyze",
@@ -142,7 +188,7 @@ class ApiTests(unittest.TestCase):
         process.assert_not_called()
 
     def test_invalid_pdf_content_returns_clear_client_error(self):
-        client, provider, process = create_client()
+        client, provider, process = create_client(self)
 
         response = client.post(
             "/documents/analyze",
@@ -156,7 +202,7 @@ class ApiTests(unittest.TestCase):
         process.assert_called_once()
 
     def test_unknown_purchase_order_is_not_processed(self):
-        client, provider, process = create_client()
+        client, provider, process = create_client(self)
 
         response = client.post(
             "/documents/analyze",
@@ -172,6 +218,7 @@ class ApiTests(unittest.TestCase):
         from backend.app.services.structured_extraction import ExtractionProviderError
 
         client, _, process = create_client(
+            self,
             provider_error=ExtractionProviderError("detalhe interno confidencial")
         )
 
@@ -187,7 +234,7 @@ class ApiTests(unittest.TestCase):
         process.assert_called_once()
 
     def test_unexpected_processing_error_does_not_leak_details(self):
-        client, _, process = create_client()
+        client, _, process = create_client(self)
         process.side_effect = RuntimeError("stack trace ou segredo")
 
         response = client.post(
