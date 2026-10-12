@@ -38,13 +38,27 @@ As dependências do backend são declaradas em `requirements.txt` e verificadas 
 
 ## Dependências do backend
 
-`pypdf` lê o texto nativo dos PDFs localmente, sem OCR nem dependências de sistema. A série 6.x declara suporte ao Python 3.14 usado no ambiente de desenvolvimento. Para instalar as dependências e rodar os testes:
+`pypdf` lê o texto nativo dos PDFs localmente, sem OCR nem dependências de sistema. `FastAPI` expõe as rotas; `python-multipart` analisa os formulários com arquivos; `httpx` atende ao `TestClient`; e `uvicorn` inicia o servidor ASGI. As versões instaladas e verificadas no ambiente Python 3.14 são FastAPI 0.143.0, python-multipart 0.0.32, httpx 0.28.1 e Uvicorn 0.54.0. Para instalar as dependências e rodar os testes:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python -m unittest discover -s backend/tests -v
 ```
+
+## API HTTP
+
+Inicie a aplicação localmente com:
+
+```bash
+.venv/bin/uvicorn backend.app.main:app --reload
+```
+
+`GET /health` retorna `{"status":"ok"}`. `POST /documents/analyze` recebe um formulário multipart com `file` (`application/pdf`) e `purchase_order_reference` (por exemplo, `PC-2026-0001`); retorna o documento extraído, avisos do PDF, achados da validação comercial e o estado `blocked`, `divergent` ou `ready_for_review`. Uma divergência retorna HTTP 200 com os achados no corpo e nunca aprova nem lança o documento. Erros de tipo, tamanho, PDF inválido e pedido ausente retornam respostas HTTP 4xx; falha ou timeout do provedor retorna 502 ou 504. Erros inesperados retornam uma mensagem genérica sem detalhes internos.
+
+O limite de upload é 10 MiB por padrão. `UploadFile` mantém uploads grandes em arquivo temporário em vez de carregá-los integralmente na memória; a rota verifica o tamanho informado e lê no máximo limite + 1 bytes antes de processar. O serviço de PDF existente também aplica seu limite.
+
+A rota busca o pedido por `PurchaseOrderRepository`. Nesta etapa, `InMemoryPurchaseOrderRepository` contém somente o pedido fictício de referência. Para integrar PostgreSQL no futuro, implemente a mesma interface e injete-a em `create_app`; a rota e o processamento não dependem do adaptador em memória. `DocumentProcessingService` e `ExtractionProvider` também são injetáveis. O app padrão usa `OllamaExtractionProvider`; configure o modelo com `DOCUFLOW_OLLAMA_MODEL` (padrão `gemma4`). Os testes substituem o provedor por um stub e não chamam Ollama.
 
 ## Extração estruturada
 
