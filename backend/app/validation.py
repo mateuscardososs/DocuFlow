@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from backend.app.evidence import evidence_is_on_page
 from backend.app.schemas import ExtractedField, PurchaseOrder, ReferenceDocument
 
 
@@ -27,10 +28,6 @@ class ValidationReport(BaseModel):
 
     status: Literal["blocked", "divergent", "ready_for_review"]
     findings: list[Finding]
-
-
-def _normalise_spaces(text: str) -> str:
-    return " ".join(text.split())
 
 
 def _decimal(value: str | None) -> Decimal | None:
@@ -74,7 +71,7 @@ def validate_document(
             add("blocking_error", "missing_evidence", f"Evidência ou página ausente: {name}.")
         elif field.page not in page_texts:
             add("blocking_error", "evidence_page_not_found", f"Página {field.page} não encontrada para {name}.")
-        elif _normalise_spaces(field.evidence) not in _normalise_spaces(page_texts[field.page]):
+        elif not evidence_is_on_page(field.evidence, field.page, page_texts):
             add("blocking_error", "evidence_not_found", f"Evidência de {name} não aparece na página {field.page}.")
 
     issue_date = document.issue_date.value
