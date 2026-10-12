@@ -10,21 +10,24 @@ from backend.app.schemas import PurchaseOrder
 
 
 class PurchaseOrderRepository(Protocol):
-    def get_by_reference(self, reference: str) -> PurchaseOrder | None: ...
+    def get_by_reference(self, reference: str, workspace_id: int) -> PurchaseOrder | None: ...
 
 
 class SqlAlchemyPurchaseOrderRepository:
     def __init__(self, session_factory: sessionmaker) -> None:
         self._session_factory = session_factory
 
-    def get_by_reference(self, reference: str) -> PurchaseOrder | None:
+    def get_by_reference(self, reference: str, workspace_id: int) -> PurchaseOrder | None:
         statement = (
             select(PurchaseOrderEntity)
             .options(
                 joinedload(PurchaseOrderEntity.supplier),
                 selectinload(PurchaseOrderEntity.items),
             )
-            .where(PurchaseOrderEntity.reference == reference)
+            .where(
+                PurchaseOrderEntity.reference == reference,
+                PurchaseOrderEntity.workspace_id == workspace_id,
+            )
         )
         with self._session_factory() as session:
             order = session.scalar(statement)

@@ -1,7 +1,9 @@
 import json
+import os
 import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from unittest.mock import patch
 
 import jwt
 from fastapi.testclient import TestClient
@@ -62,6 +64,7 @@ class AuthApiTests(unittest.TestCase):
         return create_app(
             document_processing_service=service,
             order_repository=SqlAlchemyPurchaseOrderRepository(self.session_factory),
+            session_factory=self.session_factory,
             auth_settings=self.auth_settings,
         )
 
@@ -141,6 +144,11 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(me.json()["email"], "operator@example.test")
         self.assertEqual(me.json()["workspaces"][0]["roles"], ["approver", "operator"])
 
+    def test_jwt_secret_must_be_configured_in_environment(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "JWT_SECRET_KEY"):
+                AuthSettings.from_environment()
+
     def test_invalid_password_is_rejected(self):
         self._add_member("operator@example.test", "demo", ["operator"])
 
@@ -209,9 +217,17 @@ class AuthApiTests(unittest.TestCase):
         token = self._login().json()["access_token"]
 
         response = self._analyze(token, foreign_workspace_id)
+        hidden_reference = self._analyze(token, self._workspace_id_for("own"))
 
         self.assertEqual(response.status_code, 403)
+        self.assertEqual(hidden_reference.status_code, 404)
         self.assertEqual(self.provider.calls, 0)
+
+    def _workspace_id_for(self, slug):
+        from sqlalchemy import select
+
+        with self.session_factory() as session:
+            return session.scalar(select(Workspace.id).where(Workspace.slug == slug))
 
     def test_user_with_both_roles_can_process(self):
         _, workspace_id = self._add_member(

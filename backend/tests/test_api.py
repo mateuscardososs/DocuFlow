@@ -4,11 +4,13 @@ import unittest
 from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.auth import AuthSettings, hash_password
 from backend.app.models.base import Base
+from backend.app.models.identity import User, Workspace, WorkspaceMembership
 from backend.app.repositories.purchase_orders import SqlAlchemyPurchaseOrderRepository
 from backend.app.seed_reference_order import seed_reference_order
 from backend.app.schemas import PurchaseOrder
@@ -54,12 +56,30 @@ def create_client(test_case, *, response=None, provider_error=None, max_upload_b
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(engine, expire_on_commit=False)
     seed_reference_order(session_factory)
+    with session_factory.begin() as session:
+        workspace = session.scalar(select(Workspace).where(Workspace.slug == "demo"))
+        user = User(email="operator@example.test", password_hash=hash_password("test-password"))
+        session.add(user)
+        session.flush()
+        session.add(
+            WorkspaceMembership(user_id=user.id, workspace_id=workspace.id, role="operator")
+        )
+        workspace_id = workspace.id
     app = create_app(
         document_processing_service=service,
         order_repository=SqlAlchemyPurchaseOrderRepository(session_factory),
+        session_factory=session_factory,
+        auth_settings=AuthSettings("test-only-secret-key-with-at-least-32-bytes"),
         max_upload_bytes=max_upload_bytes,
     )
-    client = TestClient(app)
+    token, _ = app.state.authentication.issue_access_token(user.id)
+    client = TestClient(
+        app,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Workspace-ID": str(workspace_id),
+        },
+    )
     test_case.addCleanup(engine.dispose)
     test_case.addCleanup(client.close)
     return client, provider, process
@@ -110,11 +130,28 @@ class ApiTests(unittest.TestCase):
         Base.metadata.create_all(engine)
         session_factory = sessionmaker(engine, expire_on_commit=False)
         seed_reference_order(session_factory)
-        client = TestClient(
-            create_app(
-                extraction_provider=provider,
-                order_repository=SqlAlchemyPurchaseOrderRepository(session_factory),
+        with session_factory.begin() as session:
+            workspace = session.scalar(select(Workspace).where(Workspace.slug == "demo"))
+            user = User(email="operator@example.test", password_hash=hash_password("test-password"))
+            session.add(user)
+            session.flush()
+            session.add(
+                WorkspaceMembership(user_id=user.id, workspace_id=workspace.id, role="operator")
             )
+            workspace_id = workspace.id
+        app = create_app(
+            extraction_provider=provider,
+            order_repository=SqlAlchemyPurchaseOrderRepository(session_factory),
+            session_factory=session_factory,
+            auth_settings=AuthSettings("test-only-secret-key-with-at-least-32-bytes"),
+        )
+        token, _ = app.state.authentication.issue_access_token(user.id)
+        client = TestClient(
+            app,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-Workspace-ID": str(workspace_id),
+            },
         )
         self.addCleanup(engine.dispose)
         self.addCleanup(client.close)
@@ -133,7 +170,10 @@ class ApiTests(unittest.TestCase):
         from backend.app.repositories.purchase_orders import SqlAlchemyPurchaseOrderRepository
 
         with patch.dict(os.environ, {"DATABASE_URL": "sqlite://"}):
-            app = create_app(extraction_provider=StubProvider())
+            app = create_app(
+                extraction_provider=StubProvider(),
+                auth_settings=AuthSettings("test-only-secret-key-with-at-least-32-bytes"),
+            )
 
         self.addCleanup(app.state.database_engine.dispose)
         self.assertIsInstance(app.state.order_repository, SqlAlchemyPurchaseOrderRepository)

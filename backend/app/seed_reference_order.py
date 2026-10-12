@@ -6,28 +6,43 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.db import create_database
+from backend.app.models.identity import Workspace
 from backend.app.models.purchase_order import PurchaseOrderEntity, PurchaseOrderItem, Supplier
 
 
 def seed_reference_order(session_factory: sessionmaker) -> bool:
     """Insere o fornecedor e pedido de referência se ainda não existirem."""
     with session_factory.begin() as session:
+        workspace = session.scalar(select(Workspace).where(Workspace.slug == "demo"))
+        if workspace is None:
+            workspace = Workspace(slug="demo", name="Workspace de demonstração")
+            session.add(workspace)
+            session.flush()
+
         existing = session.scalar(
-            select(PurchaseOrderEntity).where(PurchaseOrderEntity.reference == "PC-2026-0001")
+            select(PurchaseOrderEntity).where(
+                PurchaseOrderEntity.reference == "PC-2026-0001",
+                PurchaseOrderEntity.workspace_id == workspace.id,
+            )
         )
         if existing is not None:
             return False
 
         supplier = session.scalar(
-            select(Supplier).where(Supplier.identifier == "FORN-0001")
+            select(Supplier).where(
+                Supplier.identifier == "FORN-0001",
+                Supplier.workspace_id == workspace.id,
+            )
         )
         if supplier is None:
             supplier = Supplier(
+                workspace_id=workspace.id,
                 name="Metalúrgica Horizonte Ltda.",
                 identifier="FORN-0001",
             )
 
         order = PurchaseOrderEntity(
+            workspace_id=workspace.id,
             reference="PC-2026-0001",
             supplier=supplier,
             currency="BRL",

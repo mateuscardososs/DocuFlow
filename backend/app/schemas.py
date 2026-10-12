@@ -1,5 +1,7 @@
 """Contratos estritos para a extração e o pedido cadastrado."""
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -49,3 +51,22 @@ class PurchaseOrder(StrictModel):
     currency: str
     items: list[PurchaseOrderItem]
     total: str
+
+
+class AccessToken(StrictModel):
+    access_token: str
+    token_type: Literal["bearer"]
+    expires_in: int
+
+
+class WorkspaceAccess(StrictModel):
+    id: int
+    slug: str
+    name: str
+    roles: list[Literal["operator", "approver"]]
+
+
+class AuthenticatedUserProfile(StrictModel):
+    id: int
+    email: str
+    workspaces: list[WorkspaceAccess]
