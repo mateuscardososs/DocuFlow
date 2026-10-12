@@ -62,13 +62,25 @@ A rota consulta `PurchaseOrderRepository`; em execução normal, `SqlAlchemyPurc
 
 ## PostgreSQL e migrações
 
-Defina a URL fora do código e do repositório, por exemplo em uma variável de ambiente local:
+O desenvolvimento local usa a imagem oficial `postgres:18.6-bookworm`, com versão fixada, healthcheck e o volume nomeado `docuflow_local_postgres_data`. O Compose cria `docuflow` para a aplicação e executa `docker/postgres/init-test-db.sql` para criar `docuflow_test` na inicialização inicial do volume.
+
+Copie o exemplo local e inicie somente o serviço PostgreSQL:
 
 ```bash
-export DATABASE_URL='postgresql+psycopg://USUARIO:SENHA@localhost:5432/docuflow'
+cp .env.example .env
+docker compose up -d postgres
+docker compose ps
 ```
 
-O banco precisa existir antes de aplicar a migração. Crie as tabelas com Alembic e cadastre o caso de demonstração em um comando explícito:
+O `.env` é ignorado pelo Git. `.env.example` contém valores apenas para desenvolvimento local; ajuste `POSTGRES_PORT` e as portas nas duas URLs se 5432 estiver ocupada. As variáveis precisam estar no ambiente do terminal para os comandos Python:
+
+```bash
+set -a
+. ./.env
+set +a
+```
+
+As URLs usam Psycopg 3 e apontam para bases diferentes. Aplique a migração e cadastre o pedido fictício de forma explícita:
 
 ```bash
 .venv/bin/alembic -c backend/alembic.ini upgrade head
@@ -78,7 +90,21 @@ O banco precisa existir antes de aplicar a migração. Crie as tabelas com Alemb
 
 O seed pode ser executado mais de uma vez: se o pedido `PC-2026-0001` já existir, ele informa isso e não o duplica. A aplicação não cria tabelas nem dados durante a inicialização. Os modelos ficam em `backend/app/models/`; a revisão inicial está em `backend/migrations/versions/`. Valores de quantidade e dinheiro usam `NUMERIC` no banco e `Decimal` em Python. As credenciais não devem ser adicionadas ao arquivo Alembic nem ao código.
 
-Os testes de persistência e da migração rodam em SQLite temporário e isolado; a suíte não precisa de um PostgreSQL disponível nem usa a URL configurada para o ambiente local. A execução da migração e dos testes contra um servidor PostgreSQL ainda deve ser feita ao preparar esse banco local.
+### Testes
+
+Os testes unitários atuais continuam usando SQLite temporário e não leem `DATABASE_URL`:
+
+```bash
+./.venv/bin/python -m unittest discover -s backend/tests -v
+```
+
+Os testes de integração rodam separadamente contra o PostgreSQL local e exigem `TEST_DATABASE_URL` apontando para `localhost` e para o banco dedicado `docuflow_test`. Eles aplicam apenas `upgrade head`, não removem tabelas nem limpam dados; os registros criados pelos testes permanecem nessa base de teste. O helper também recusa SQLite, outros nomes de banco e uma URL igual a `DATABASE_URL`.
+
+```bash
+./.venv/bin/python -m unittest discover -s backend/tests/integration -v
+```
+
+O SQL de inicialização do Compose cria a base de teste somente quando o volume PostgreSQL é inicializado pela primeira vez. Se estiver usando um volume local existente no qual essa base ainda não existe, crie-a sem apagar o volume com `docker compose exec postgres createdb -U docuflow docuflow_test` (ajuste o usuário se mudou `POSTGRES_USER`). Para parar o serviço mantendo todos os dados, use `docker compose stop postgres`; para iniciá-lo novamente, `docker compose start postgres`. Não use `down -v` para encerrar o ambiente.
 
 ## Extração estruturada
 
