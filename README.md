@@ -34,4 +34,14 @@ samples/documents/  # documentos fictícios para demonstração
 5. OCR, ERP demonstrativo e recuperação de falhas.
 6. Avaliação, documentação e demonstração.
 
-As versões das bibliotecas serão escolhidas e verificadas quando iniciarmos a implementação e a instalação das dependências.
+As dependências do backend são declaradas em `requirements.txt` e verificadas para a versão de Python do ambiente.
+
+## Dependências do backend
+
+`pypdf` lê o texto nativo dos PDFs localmente, sem OCR nem dependências de sistema. A série 6.x declara suporte ao Python 3.14 usado no ambiente de desenvolvimento. Para instalar as dependências e rodar os testes:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m unittest discover -s backend/tests -v
+```
