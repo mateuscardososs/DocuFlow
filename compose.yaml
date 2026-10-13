@@ -1,4 +1,16 @@
 services:
+  redis:
+    image: redis:8.2.10-alpine3.22
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - docuflow_local_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 3s
   postgres:
     image: postgres:18.6-bookworm
     environment:
@@ -18,5 +30,7 @@ services:
       start_period: 5s
 
 volumes:
+  docuflow_local_redis_data:
+    name: docuflow_local_redis_data
   docuflow_local_postgres_data:
     name: docuflow_local_postgres_data

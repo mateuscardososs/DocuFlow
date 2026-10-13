@@ -27,6 +27,7 @@ from backend.app.services.document_storage import DocumentFileStorage
 from backend.tests.test_api import StubProvider
 from backend.tests.test_document_processing import reference_payload
 from backend.tests.test_pdf_text_extractor import REFERENCE_TEXT, make_pdf
+from backend.tests.inline_queue import InlineDocumentQueue
 
 
 class DocumentReviewApiTests(unittest.TestCase):
@@ -99,14 +100,17 @@ class DocumentReviewApiTests(unittest.TestCase):
         provider = StubProvider(response=json.dumps(reference_payload(), ensure_ascii=False))
         from backend.app.api.app import create_app
 
+        queue = InlineDocumentQueue()
         self.app = create_app(
             extraction_provider=provider,
             order_repository=SqlAlchemyPurchaseOrderRepository(self.session_factory),
             document_repository=SqlAlchemyDocumentRepository(self.session_factory),
             document_storage=DocumentFileStorage(Path(self.storage_dir.name)),
+            document_queue=queue,
             session_factory=self.session_factory,
             auth_settings=AuthSettings("test-only-secret-key-with-at-least-32-bytes"),
         )
+        queue.app = self.app
         self.tokens = {
             email: self.app.state.authentication.issue_access_token(user_id)[0]
             for email, user_id in self.user_ids.items()
@@ -118,7 +122,7 @@ class DocumentReviewApiTests(unittest.TestCase):
             data={"purchase_order_reference": "PC-2026-0001"},
             files={"file": ("invoice.pdf", make_pdf([REFERENCE_TEXT]), "application/pdf")},
         )
-        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.status_code, 202, response.text)
         self.document_id = response.json()["document_id"]
 
     def tearDown(self):

@@ -1,8 +1,9 @@
 """Persistência SQLAlchemy de documentos, sempre limitada ao workspace."""
 
+from datetime import datetime, timezone
 from typing import Any, Protocol
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -39,10 +40,29 @@ class DocumentRepository(Protocol):
         workspace_id: int,
         result: DocumentProcessingResult,
         page_texts: list[dict[str, int | str]],
+        job_id: str | None = None,
     ) -> None: ...
     def mark_failed(
         self, *, document_id: int, workspace_id: int, safe_message: str
     ) -> None: ...
+    def mark_enqueue_failed(
+        self, *, document_id: int, workspace_id: int, job_id: str, safe_message: str
+    ) -> None: ...
+    def set_job_id(self, *, document_id: int, workspace_id: int, job_id: str) -> bool: ...
+    def requeue_failed(self, *, document_id: int, workspace_id: int, job_id: str) -> bool: ...
+    def claim_for_processing(
+        self, *, document_id: int, job_id: str, max_attempts: int
+    ) -> DocumentEntity | None: ...
+    def record_attempt_error(
+        self, *, document_id: int, job_id: str, safe_message: str
+    ) -> None: ...
+    def list_stale_processing(self, *, cutoff: datetime) -> list[DocumentEntity]: ...
+    def requeue_stale(
+        self, *, document_id: int, cutoff: datetime, job_id: str
+    ) -> bool: ...
+    def fail_stale(
+        self, *, document_id: int, job_id: str, cutoff: datetime, safe_message: str
+    ) -> bool: ...
     def save_correction(
         self,
         *,
@@ -104,7 +124,7 @@ class SqlAlchemyDocumentRepository:
                     content_type=content_type,
                     sha256=sha256,
                     storage_key=storage_key,
-                    processing_status="processing",
+                    processing_status="queued",
                     review_status="pending",
                 )
                 session.add(document)
@@ -160,23 +180,30 @@ class SqlAlchemyDocumentRepository:
         workspace_id: int,
         result: DocumentProcessingResult,
         page_texts: list[dict[str, int | str]],
+        job_id: str | None = None,
     ) -> None:
         with self._session_factory.begin() as session:
             document = session.scalar(
-                select(DocumentEntity).where(
+                select(DocumentEntity)
+                .where(
                     DocumentEntity.id == document_id,
                     DocumentEntity.workspace_id == workspace_id,
+                    DocumentEntity.processing_status.in_(("queued", "processing")),
+                    DocumentEntity.review_status != "approved",
+                    *([DocumentEntity.active_job_id == job_id] if job_id else []),
                 )
+                .with_for_update()
             )
             if document is None:
-                raise RuntimeError("O documento não foi encontrado para atualizar o resultado.")
+                raise RuntimeError("O documento não está elegível para salvar o resultado.")
             document.page_texts = page_texts
             document.extracted_document = result.document.model_dump(mode="json")
             document.pdf_warnings = list(result.pdf_warnings)
             document.validation_result = result.validation.model_dump(mode="json")
             document.final_status = result.status
-            document.processing_status = "succeeded"
+            document.processing_status = "ready_for_review"
             document.processing_error = None
+            document.processing_started_at = None
 
     def mark_failed(self, *, document_id: int, workspace_id: int, safe_message: str) -> None:
         with self._session_factory.begin() as session:
@@ -188,8 +215,191 @@ class SqlAlchemyDocumentRepository:
             )
             if document is None:
                 raise RuntimeError("O documento não foi encontrado para registrar a falha.")
+            if document.processing_status == "ready_for_review" or document.review_status == "approved":
+                return
             document.processing_status = "failed"
             document.processing_error = safe_message
+
+    def mark_enqueue_failed(
+        self, *, document_id: int, workspace_id: int, job_id: str, safe_message: str
+    ) -> None:
+        with self._session_factory.begin() as session:
+            document = session.scalar(
+                select(DocumentEntity)
+                .where(
+                    DocumentEntity.id == document_id,
+                    DocumentEntity.workspace_id == workspace_id,
+                    DocumentEntity.active_job_id == job_id,
+                    DocumentEntity.processing_status == "queued",
+                    DocumentEntity.review_status != "approved",
+                )
+                .with_for_update()
+            )
+            if document is not None:
+                document.processing_status = "failed"
+                document.processing_error = document.processing_error or safe_message
+
+    def set_job_id(self, *, document_id: int, workspace_id: int, job_id: str) -> bool:
+        with self._session_factory.begin() as session:
+            document = session.scalar(
+                select(DocumentEntity)
+                .where(
+                    DocumentEntity.id == document_id,
+                    DocumentEntity.workspace_id == workspace_id,
+                )
+                .with_for_update()
+            )
+            if document is None or document.processing_status != "queued":
+                return False
+            document.active_job_id = job_id
+            return True
+
+    def requeue_failed(self, *, document_id: int, workspace_id: int, job_id: str) -> bool:
+        with self._session_factory.begin() as session:
+            document = session.scalar(
+                select(DocumentEntity)
+                .where(
+                    DocumentEntity.id == document_id,
+                    DocumentEntity.workspace_id == workspace_id,
+                )
+                .with_for_update()
+            )
+            if (
+                document is None
+                or document.processing_status != "failed"
+                or document.review_status == "approved"
+            ):
+                return False
+            document.processing_status = "queued"
+            document.processing_attempts = 0
+            document.processing_started_at = None
+            document.active_job_id = job_id
+            document.processing_error = None
+            return True
+
+    def claim_for_processing(
+        self, *, document_id: int, job_id: str, max_attempts: int
+    ) -> DocumentEntity | None:
+        with self._session_factory.begin() as session:
+            document = session.scalar(
+                select(DocumentEntity)
+                .where(DocumentEntity.id == document_id)
+                .with_for_update()
+            )
+            if (
+                document is None
+                or document.active_job_id != job_id
+                or document.review_status == "approved"
+                or document.processing_status not in {"queued", "processing"}
+                or document.processing_attempts >= max_attempts
+            ):
+                return None
+            document.processing_status = "processing"
+            document.processing_attempts += 1
+            document.processing_started_at = datetime.now(timezone.utc)
+            return document
+
+    def record_attempt_error(
+        self, *, document_id: int, job_id: str, safe_message: str
+    ) -> None:
+        with self._session_factory.begin() as session:
+            document = session.scalar(
+                select(DocumentEntity)
+                .where(
+                    DocumentEntity.id == document_id,
+                    DocumentEntity.active_job_id == job_id,
+                    DocumentEntity.processing_status == "processing",
+                    DocumentEntity.review_status != "approved",
+                )
+                .with_for_update()
+            )
+            if document is not None:
+                document.processing_error = safe_message
+
+    def fail_job(
+        self, *, document_id: int, job_id: str, safe_message: str
+    ) -> None:
+        with self._session_factory.begin() as session:
+            document = session.scalar(
+                select(DocumentEntity)
+                .where(
+                    DocumentEntity.id == document_id,
+                    DocumentEntity.active_job_id == job_id,
+                    DocumentEntity.processing_status == "processing",
+                    DocumentEntity.review_status != "approved",
+                )
+                .with_for_update()
+            )
+            if document is not None:
+                document.processing_status = "failed"
+                document.processing_error = document.processing_error or safe_message
+
+    def fail_stale(
+        self, *, document_id: int, job_id: str, cutoff: datetime, safe_message: str
+    ) -> bool:
+        with self._session_factory.begin() as session:
+            document = session.scalar(
+                select(DocumentEntity)
+                .where(DocumentEntity.id == document_id)
+                .with_for_update()
+            )
+            if (
+                document is None
+                or document.active_job_id != job_id
+                or document.processing_status != "processing"
+                or document.review_status == "approved"
+                or (
+                    document.processing_started_at is not None
+                    and document.processing_started_at
+                    > _compatible_datetime(cutoff, document.processing_started_at)
+                )
+            ):
+                return False
+            document.processing_status = "failed"
+            document.processing_error = safe_message
+            return True
+
+    def list_stale_processing(self, *, cutoff: datetime) -> list[DocumentEntity]:
+        with self._session_factory() as session:
+            return list(
+                session.scalars(
+                    select(DocumentEntity).where(
+                        DocumentEntity.processing_status == "processing",
+                        DocumentEntity.review_status != "approved",
+                        or_(
+                            DocumentEntity.processing_started_at.is_(None),
+                            DocumentEntity.processing_started_at <= cutoff,
+                        ),
+                    )
+                ).all()
+            )
+
+    def requeue_stale(
+        self, *, document_id: int, cutoff: datetime, job_id: str
+    ) -> bool:
+        with self._session_factory.begin() as session:
+            document = session.scalar(
+                select(DocumentEntity)
+                .where(DocumentEntity.id == document_id)
+                .with_for_update()
+            )
+            if (
+                document is None
+                or document.processing_status != "processing"
+                or document.review_status == "approved"
+                or (
+                    document.processing_started_at is not None
+                    and document.processing_started_at
+                    > _compatible_datetime(cutoff, document.processing_started_at)
+                )
+            ):
+                return False
+            document.processing_status = "queued"
+            document.processing_attempts = 0
+            document.processing_started_at = None
+            document.active_job_id = job_id
+            document.processing_error = "Execução interrompida; o documento foi recolocado na fila."
+            return True
 
     def save_correction(
         self,
@@ -219,7 +429,7 @@ class SqlAlchemyDocumentRepository:
             if document is None:
                 raise DocumentReviewNotFound
             _require_current_version(document, expected_version)
-            if document.processing_status != "succeeded" or document.extracted_document is None:
+            if document.processing_status != "ready_for_review" or document.extracted_document is None:
                 raise DocumentNotReviewable
 
             next_version = document.review_version + 1
@@ -286,7 +496,7 @@ class SqlAlchemyDocumentRepository:
             if document is None:
                 raise DocumentReviewNotFound
             _require_current_version(document, expected_version)
-            if document.processing_status != "succeeded" or document.extracted_document is None:
+            if document.processing_status != "ready_for_review" or document.extracted_document is None:
                 raise DocumentNotReviewable
             if document.review_status != "pending":
                 raise ReviewActionConflict
@@ -348,7 +558,7 @@ class SqlAlchemyDocumentRepository:
             if document is None:
                 raise DocumentReviewNotFound
             _require_current_version(document, expected_version)
-            if document.processing_status != "succeeded" or document.extracted_document is None:
+            if document.processing_status != "ready_for_review" or document.extracted_document is None:
                 raise DocumentNotReviewable
             if document.review_status != "pending":
                 raise ReviewActionConflict
@@ -404,4 +614,12 @@ def _require_current_version(document: DocumentEntity, expected_version: int) ->
 
     if document.review_version != expected_version:
         raise ReviewVersionConflict
+
+
+def _compatible_datetime(value: datetime, reference: datetime) -> datetime:
+    if reference.tzinfo is None and value.tzinfo is not None:
+        return value.replace(tzinfo=None)
+    if reference.tzinfo is not None and value.tzinfo is None:
+        return value.replace(tzinfo=reference.tzinfo)
+    return value
 

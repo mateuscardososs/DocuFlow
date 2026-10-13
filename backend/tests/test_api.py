@@ -24,6 +24,7 @@ from backend.app.services.document_processing import (
 from backend.app.services.document_storage import DocumentFileStorage
 from backend.tests.test_document_processing import reference_payload
 from backend.tests.test_pdf_text_extractor import REFERENCE_TEXT, make_pdf
+from backend.tests.inline_queue import InlineDocumentQueue
 
 
 class StubProvider:
@@ -70,15 +71,18 @@ def create_client(test_case, *, response=None, provider_error=None, max_upload_b
             WorkspaceMembership(user_id=user.id, workspace_id=workspace.id, role="operator")
         )
         workspace_id = workspace.id
+    queue = InlineDocumentQueue()
     app = create_app(
         document_processing_service=service,
         order_repository=SqlAlchemyPurchaseOrderRepository(session_factory),
         document_repository=SqlAlchemyDocumentRepository(session_factory),
         document_storage=DocumentFileStorage(Path(storage_dir.name)),
+        document_queue=queue,
         session_factory=session_factory,
         auth_settings=AuthSettings("test-only-secret-key-with-at-least-32-bytes"),
         max_upload_bytes=max_upload_bytes,
     )
+    queue.app = app
     token, _ = app.state.authentication.issue_access_token(user.id)
     client = TestClient(
         app,
@@ -112,12 +116,13 @@ class ApiTests(unittest.TestCase):
             files={"file": ("documento.pdf", pdf, "application/pdf")},
         )
 
-        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.status_code, 202, response.text)
         body = response.json()
-        self.assertEqual(body["status"], "ready_for_review")
-        self.assertEqual(body["document"]["document_number"]["value"], "DOC-2026-1042")
-        self.assertEqual(body["validation"]["status"], "ready_for_review")
-        self.assertEqual(body["pdf_warnings"], [])
+        self.assertEqual(body["state"], "queued")
+        detail = client.get(f"/documents/{body['document_id']}").json()
+        self.assertEqual(detail["extracted_document"]["document_number"]["value"], "DOC-2026-1042")
+        self.assertEqual(detail["validation_result"]["status"], "ready_for_review")
+        self.assertEqual(detail["pdf_warnings"], [])
         self.assertNotIn("pdf_bytes", body)
         self.assertEqual(provider.calls, 1)
         process.assert_called_once()
@@ -148,14 +153,17 @@ class ApiTests(unittest.TestCase):
                 WorkspaceMembership(user_id=user.id, workspace_id=workspace.id, role="operator")
             )
             workspace_id = workspace.id
+        queue = InlineDocumentQueue()
         app = create_app(
             extraction_provider=provider,
             order_repository=SqlAlchemyPurchaseOrderRepository(session_factory),
             document_repository=SqlAlchemyDocumentRepository(session_factory),
             document_storage=DocumentFileStorage(Path(storage_dir.name)),
+            document_queue=queue,
             session_factory=session_factory,
             auth_settings=AuthSettings("test-only-secret-key-with-at-least-32-bytes"),
         )
+        queue.app = app
         token, _ = app.state.authentication.issue_access_token(user.id)
         client = TestClient(
             app,
@@ -174,7 +182,7 @@ class ApiTests(unittest.TestCase):
             files={"file": ("documento.pdf", make_pdf([REFERENCE_TEXT]), "application/pdf")},
         )
 
-        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.status_code, 202, response.text)
         self.assertEqual(provider.calls, 1)
 
     def test_default_repository_uses_database_url_and_sqlalchemy(self):
@@ -203,12 +211,13 @@ class ApiTests(unittest.TestCase):
             files={"file": ("documento.pdf", make_pdf([REFERENCE_TEXT]), "application/pdf")},
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["status"], "divergent")
+        self.assertEqual(response.status_code, 202)
+        detail = client.get(f"/documents/{response.json()['document_id']}").json()
+        self.assertEqual(detail["final_status"], "divergent")
         self.assertTrue(
             any(
                 finding["code"] == "order_quantity_mismatch"
-                for finding in response.json()["validation"]["findings"]
+                for finding in detail["validation_result"]["findings"]
             )
         )
 
@@ -248,8 +257,11 @@ class ApiTests(unittest.TestCase):
             files={"file": ("documento.pdf", b"nao e um PDF", "application/pdf")},
         )
 
-        self.assertEqual(response.status_code, 422)
-        self.assertIn("PDF", response.json()["detail"])
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json()["state"], "queued")
+        detail = client.get(f"/documents/{response.json()['document_id']}").json()
+        self.assertEqual(detail["processing_status"], "failed")
+        self.assertIn("PDF", detail["processing_error"])
         self.assertEqual(provider.calls, 0)
         process.assert_called_once()
 
@@ -280,9 +292,10 @@ class ApiTests(unittest.TestCase):
             files={"file": ("documento.pdf", make_pdf([REFERENCE_TEXT]), "application/pdf")},
         )
 
-        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.status_code, 202)
         self.assertNotIn("detalhe interno confidencial", response.text)
-        self.assertIn("provedor de extração", response.json()["detail"])
+        detail = client.get(f"/documents/{response.json()['document_id']}").json()
+        self.assertIn("provedor de extração", detail["processing_error"])
         process.assert_called_once()
 
     def test_unexpected_processing_error_does_not_leak_details(self):
@@ -295,8 +308,10 @@ class ApiTests(unittest.TestCase):
             files={"file": ("documento.pdf", make_pdf([REFERENCE_TEXT]), "application/pdf")},
         )
 
-        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.status_code, 202)
         self.assertNotIn("stack trace ou segredo", response.text)
+        detail = client.get(f"/documents/{response.json()['document_id']}").json()
+        self.assertEqual(detail["processing_status"], "failed")
 
 
 if __name__ == "__main__":

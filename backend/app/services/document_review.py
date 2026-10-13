@@ -127,7 +127,7 @@ class DocumentReviewService:
             raise ReviewVersionConflict(
                 "A versão do documento mudou. Atualize os dados antes de tentar novamente."
             )
-        if current.processing_status != "succeeded" or current.extracted_document is None:
+        if current.processing_status != "ready_for_review" or current.extracted_document is None:
             raise DocumentNotReviewable("Documento ainda não está disponível para revisão.")
         return current
 

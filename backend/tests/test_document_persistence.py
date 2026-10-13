@@ -27,6 +27,7 @@ from backend.app.services.document_processing import (
 from backend.tests.test_api import StubProvider
 from backend.tests.test_document_processing import reference_payload
 from backend.tests.test_pdf_text_extractor import REFERENCE_TEXT, make_pdf
+from backend.tests.inline_queue import InlineDocumentQueue
 
 
 JWT_SECRET = "test-only-secret-key-with-at-least-32-bytes"
@@ -96,14 +97,17 @@ class DocumentPersistenceApiTests(unittest.TestCase):
         processing.process_with_pages = self.process
         from backend.app.api.app import create_app
 
+        queue = InlineDocumentQueue()
         self.app = create_app(
             document_processing_service=processing,
             order_repository=SqlAlchemyPurchaseOrderRepository(self.session_factory),
             document_repository=SqlAlchemyDocumentRepository(self.session_factory),
             document_storage=DocumentFileStorage(Path(self.temp_dir.name)),
+            document_queue=queue,
             session_factory=self.session_factory,
             auth_settings=AuthSettings(JWT_SECRET),
         )
+        queue.app = self.app
         token, _ = self.app.state.authentication.issue_access_token(self.user_id)
         self.client = TestClient(
             self.app,
@@ -144,10 +148,10 @@ class DocumentPersistenceApiTests(unittest.TestCase):
 
         response = self._upload(name="../../nota original.pdf", content=content)
 
-        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.status_code, 202, response.text)
         body = response.json()
         self.assertFalse(body["duplicate"])
-        self.assertEqual(body["document"]["document_number"]["value"], "DOC-2026-1042")
+        self.assertEqual(body["state"], "queued")
         record = self._document(body["document_id"])
         stored_file = Path(self.temp_dir.name) / record.storage_key
         self.assertTrue(stored_file.is_file())
@@ -157,7 +161,7 @@ class DocumentPersistenceApiTests(unittest.TestCase):
         self.assertEqual(record.original_filename, "nota original.pdf")
         self.assertEqual(record.size_bytes, len(content))
         self.assertEqual(record.sha256, sha256(content).hexdigest())
-        self.assertEqual(record.processing_status, "succeeded")
+        self.assertEqual(record.processing_status, "ready_for_review")
         self.assertEqual(record.review_status, "pending")
         self.assertEqual(record.page_texts[0]["number"], 1)
         self.assertIn("METALURGICA HORIZONTE", record.page_texts[0]["text"])
@@ -172,7 +176,7 @@ class DocumentPersistenceApiTests(unittest.TestCase):
         first = self._upload(content=content)
         second = self._upload(name="renamed.pdf", content=content)
 
-        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.status_code, 202)
         self.assertEqual(second.status_code, 200, second.text)
         self.assertTrue(second.json()["duplicate"])
         self.assertEqual(second.json()["document_id"], first.json()["document_id"])
@@ -225,15 +229,15 @@ class DocumentPersistenceApiTests(unittest.TestCase):
         first = self._upload(content=content)
         second = self._upload(content=content, workspace_id=branch_id)
 
-        self.assertEqual(first.status_code, 200)
-        self.assertEqual(second.status_code, 200, second.text)
+        self.assertEqual(first.status_code, 202)
+        self.assertEqual(second.status_code, 202, second.text)
         self.assertFalse(second.json()["duplicate"])
         self.assertNotEqual(second.json()["document_id"], first.json()["document_id"])
 
     def test_invalid_pdf_is_retained_as_failed_attempt(self):
         response = self._upload(content=b"not a PDF")
 
-        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.status_code, 202)
         self.assertIn("document_id", response.json())
         record = self._document(response.json()["document_id"])
         self.assertEqual(record.processing_status, "failed")
@@ -247,7 +251,7 @@ class DocumentPersistenceApiTests(unittest.TestCase):
 
         response = self._upload()
 
-        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.status_code, 202)
         self.assertIn("document_id", response.json())
         self.assertNotIn("private provider traceback", response.text)
         record = self._document(response.json()["document_id"])

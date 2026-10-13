@@ -2,6 +2,7 @@
 
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
@@ -127,13 +128,15 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         )
         with self.engine.connect() as connection:
             revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
-        self.assertEqual(revision, "20261015_0004")
+        self.assertEqual(revision, "20261016_0006")
         self.assertIn(
             "uq_purchase_orders_workspace_reference",
             {item["name"] for item in inspector.get_unique_constraints("purchase_orders")},
         )
         self.assertTrue(inspector.get_foreign_keys("purchase_orders"))
         self.assertIn("documents", inspector.get_table_names())
+        document_columns = {column["name"] for column in inspector.get_columns("documents")}
+        self.assertTrue({"processing_attempts", "processing_started_at", "active_job_id"}.issubset(document_columns))
         self.assertTrue(
             {"document_review_revisions", "document_approvals", "document_audit_events"}
             .issubset(set(inspector.get_table_names()))
@@ -437,13 +440,91 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         )
         stored = repository.get_by_id(document.id, self.demo_workspace_id)
         self.assertEqual(stored.sha256, checksum)
-        self.assertEqual(stored.processing_status, "succeeded")
+        self.assertEqual(stored.processing_status, "ready_for_review")
         self.assertEqual(stored.review_status, "pending")
         self.assertEqual(stored.page_texts, [{"number": 1, "text": "Texto do PDF"}])
         self.assertEqual(stored.pdf_warnings, ["A página 2 não contém texto utilizável."])
         self.assertEqual(stored.validation_result["status"], "ready_for_review")
         self.assertEqual(stored.extracted_document["document_number"]["value"], "DOC-2026-1042")
         self.assertIsNone(repository.get_by_id(document.id, other_workspace_id))
+
+    def test_async_job_claim_is_idempotent_and_uses_attempt_counter(self):
+        seed_reference_order(self.session_factory)
+        order_id = self.repository.get_entity_id_by_reference("PC-2026-0001", self.demo_workspace_id)
+        repository = SqlAlchemyDocumentRepository(self.session_factory)
+        document, duplicate = repository.create(
+            workspace_id=self.demo_workspace_id,
+            purchase_order_id=order_id,
+            original_filename="queue.pdf",
+            size_bytes=123,
+            content_type="application/pdf",
+            sha256=uuid4().hex + uuid4().hex,
+            storage_key=f"{self.demo_workspace_id}/{uuid4().hex}.pdf",
+        )
+        self.assertFalse(duplicate)
+        self.assertTrue(repository.set_job_id(
+            document_id=document.id, workspace_id=self.demo_workspace_id, job_id="pg-job-first"
+        ))
+
+        claimed = repository.claim_for_processing(
+            document_id=document.id, job_id="pg-job-first", max_attempts=3
+        )
+        duplicate_claim = repository.claim_for_processing(
+            document_id=document.id, job_id="pg-job-duplicate", max_attempts=3
+        )
+
+        self.assertEqual(claimed.processing_status, "processing")
+        self.assertEqual(claimed.processing_attempts, 1)
+        self.assertIsNone(duplicate_claim)
+        repository.record_attempt_error(
+            document_id=document.id,
+            job_id="pg-job-first",
+            safe_message="Falha temporária simulada.",
+        )
+        repository.fail_job(
+            document_id=document.id,
+            job_id="pg-job-first",
+            safe_message="Falha final segura.",
+        )
+        failed = repository.get_by_id(document.id, self.demo_workspace_id)
+        self.assertEqual(failed.processing_status, "failed")
+        self.assertEqual(failed.processing_error, "Falha temporária simulada.")
+
+    def test_stale_document_can_be_requeued_without_old_job_claiming_it(self):
+        seed_reference_order(self.session_factory)
+        order_id = self.repository.get_entity_id_by_reference("PC-2026-0001", self.demo_workspace_id)
+        repository = SqlAlchemyDocumentRepository(self.session_factory)
+        document, _ = repository.create(
+            workspace_id=self.demo_workspace_id,
+            purchase_order_id=order_id,
+            original_filename="stale.pdf",
+            size_bytes=123,
+            content_type="application/pdf",
+            sha256=uuid4().hex + uuid4().hex,
+            storage_key=f"{self.demo_workspace_id}/{uuid4().hex}.pdf",
+        )
+        repository.set_job_id(
+            document_id=document.id, workspace_id=self.demo_workspace_id, job_id="stale-old-job"
+        )
+        repository.claim_for_processing(
+            document_id=document.id, job_id="stale-old-job", max_attempts=3
+        )
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+        with self.session_factory.begin() as session:
+            stored = session.get(DocumentEntity, document.id)
+            stored.processing_started_at = cutoff - timedelta(minutes=1)
+
+        stale = repository.list_stale_processing(cutoff=cutoff)
+        self.assertTrue(any(item.id == document.id for item in stale))
+        self.assertTrue(repository.requeue_stale(
+            document_id=document.id, cutoff=cutoff, job_id="stale-new-job"
+        ))
+        self.assertIsNone(repository.claim_for_processing(
+            document_id=document.id, job_id="stale-old-job", max_attempts=3
+        ))
+        self.assertEqual(repository.claim_for_processing(
+            document_id=document.id, job_id="stale-new-job", max_attempts=3
+        ).processing_status, "processing")
 
     def test_supplier_order_and_item_uniqueness_constraints(self):
         suffix = uuid4().hex

@@ -223,6 +223,21 @@ class PurchaseOrderRepositoryTests(unittest.TestCase):
                     "VALUES (39, 29, 'LEG-001', 'Item legado', 1, 99.90, 99.90)"
                 )
             )
+            command.upgrade(config, "20261015_0004")
+            demo_workspace_id = connection.scalar(
+                text("SELECT id FROM workspaces WHERE slug = 'demo'")
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO documents "
+                    "(id, workspace_id, purchase_order_id, original_filename, size_bytes, "
+                    "content_type, sha256, storage_key, processing_status, review_status) "
+                    "VALUES (101, :workspace_id, 29, 'legacy.pdf', 123, 'application/pdf', "
+                    "'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', "
+                    "'1/legacy.pdf', 'succeeded', 'pending')"
+                ),
+                {"workspace_id": demo_workspace_id},
+            )
             command.upgrade(config, "head")
 
         inspector = sqlalchemy_inspect(migration_engine)
@@ -265,7 +280,11 @@ class PurchaseOrderRepositoryTests(unittest.TestCase):
                     "WHERE s.id = 17 AND p.id = 29 AND i.id = 39"
                 )
             ).one()
+            migrated_status = connection.scalar(
+                text("SELECT processing_status FROM documents WHERE id = 101")
+            )
         self.assertEqual(legacy, ("LEGADO-17", "PC-LEGADO-29", "LEG-001", "demo"))
+        self.assertEqual(migrated_status, "ready_for_review")
         migration_engine.dispose()
 
 

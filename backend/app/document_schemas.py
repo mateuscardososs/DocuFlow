@@ -27,7 +27,7 @@ class DocumentSummary(BaseModel):
     content_type: str
     sha256: str
     uploaded_at: datetime
-    processing_status: Literal["processing", "succeeded", "failed"]
+    processing_status: Literal["queued", "processing", "ready_for_review", "failed"]
     review_status: Literal["pending", "approved", "rejected"]
     review_version: int
     processing_error: str | None
@@ -48,7 +48,8 @@ class DocumentAnalysisResponse(BaseModel):
 
     document_id: int
     duplicate: bool
-    processing_status: Literal["processing", "succeeded", "failed"]
+    processing_status: Literal["queued", "processing", "ready_for_review", "failed"]
+    state: Literal["queued", "processing", "ready_for_review", "failed"]
     review_status: Literal["pending", "approved", "rejected"]
     review_version: int
     processing_error: str | None
@@ -56,6 +57,15 @@ class DocumentAnalysisResponse(BaseModel):
     pdf_warnings: list[str] | None
     validation: ValidationReport | None
     status: Literal["blocked", "divergent", "ready_for_review"] | None
+
+
+class DocumentEnqueueResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    document_id: int
+    duplicate: bool = False
+    state: Literal["queued", "processing", "ready_for_review", "failed"]
+    processing_status: Literal["queued", "processing", "ready_for_review", "failed"]
 
 
 class ReviewCorrectionRequest(BaseModel):

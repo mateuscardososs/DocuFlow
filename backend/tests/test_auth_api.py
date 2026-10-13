@@ -26,6 +26,7 @@ from backend.app.services.document_processing import (
 )
 from backend.tests.test_document_processing import reference_payload
 from backend.tests.test_pdf_text_extractor import REFERENCE_TEXT, make_pdf
+from backend.tests.inline_queue import InlineDocumentQueue
 
 
 JWT_SECRET = "test-only-secret-key-with-at-least-32-bytes"
@@ -67,14 +68,18 @@ class AuthApiTests(unittest.TestCase):
         from backend.app.api.app import create_app
 
         service = DocumentProcessingService(self.provider, config=DocumentProcessingConfig())
-        return create_app(
+        queue = InlineDocumentQueue()
+        app = create_app(
             document_processing_service=service,
             order_repository=SqlAlchemyPurchaseOrderRepository(self.session_factory),
             document_repository=SqlAlchemyDocumentRepository(self.session_factory),
             document_storage=DocumentFileStorage(Path(self.storage_dir.name)),
+            document_queue=queue,
             session_factory=self.session_factory,
             auth_settings=self.auth_settings,
         )
+        queue.app = app
+        return app
 
     def _add_member(self, email, slug, roles, *, with_order=False):
         with self.session_factory.begin() as session:
@@ -213,8 +218,8 @@ class AuthApiTests(unittest.TestCase):
 
         response = self._analyze(token, workspace_id)
 
-        self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.json()["status"], "ready_for_review")
+        self.assertEqual(response.status_code, 202, response.text)
+        self.assertEqual(response.json()["state"], "queued")
         self.assertEqual(self.provider.calls, 1)
 
     def test_other_workspace_order_is_hidden_and_workspace_access_is_denied(self):
@@ -245,7 +250,8 @@ class AuthApiTests(unittest.TestCase):
 
         response = self._analyze(token, workspace_id)
 
-        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.status_code, 202, response.text)
+        self.assertEqual(response.json()["state"], "queued")
 
 
 if __name__ == "__main__":

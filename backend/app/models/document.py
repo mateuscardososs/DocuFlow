@@ -33,7 +33,7 @@ class DocumentEntity(Base):
             ondelete="RESTRICT",
         ),
         CheckConstraint(
-            "processing_status IN ('processing', 'succeeded', 'failed')",
+            "processing_status IN ('queued', 'processing', 'ready_for_review', 'failed')",
             name="processing_status_valid",
         ),
         CheckConstraint(
@@ -61,7 +61,16 @@ class DocumentEntity(Base):
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    processing_status: Mapped[str] = mapped_column(String(20), nullable=False, default="processing")
+    processing_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="queued", server_default="queued"
+    )
+    processing_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    processing_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    active_job_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     review_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     review_version: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default="1"

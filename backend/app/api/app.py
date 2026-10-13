@@ -2,7 +2,7 @@
 
 import os
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.exc import SQLAlchemyError
@@ -28,7 +28,13 @@ from backend.app.repositories.purchase_orders import (
     SqlAlchemyPurchaseOrderRepository,
 )
 from backend.app.repositories.documents import DocumentRepository, SqlAlchemyDocumentRepository
-from backend.app.services.document_lifecycle import DocumentAttemptError, DocumentLifecycleService
+from backend.app.services.document_lifecycle import (
+    DocumentAttemptError,
+    DocumentLifecycleService,
+    DocumentNotEligible,
+    DocumentNotFound,
+)
+from backend.app.services.document_queue import DocumentQueue, DocumentQueueConfig, RQDocumentQueue
 from backend.app.services.document_review import (
     ApprovalBlocked,
     DocumentNotReviewable,
@@ -55,6 +61,7 @@ def create_app(
     order_repository: PurchaseOrderRepository | None = None,
     document_repository: DocumentRepository | None = None,
     document_storage: DocumentFileStorage | None = None,
+    document_queue: DocumentQueue | None = None,
     session_factory: sessionmaker | None = None,
     auth_settings: AuthSettings | None = None,
     max_upload_bytes: int = DEFAULT_MAX_BYTES,
@@ -88,11 +95,13 @@ def create_app(
         document_repository = SqlAlchemyDocumentRepository(session_factory)
     if document_storage is None:
         document_storage = DocumentFileStorage(os.getenv("DOCUMENT_STORAGE_DIR", "var/documents"))
+    if document_queue is None:
+        document_queue = RQDocumentQueue(DocumentQueueConfig.from_environment())
 
     auth_settings = auth_settings or AuthSettings.from_environment()
     authentication = AuthenticationService(session_factory, auth_settings)
     document_lifecycle = DocumentLifecycleService(
-        document_repository, document_storage, document_processing_service
+        document_repository, document_storage, document_queue
     )
     document_review = DocumentReviewService(document_repository, order_repository)
     oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
@@ -102,6 +111,7 @@ def create_app(
     app.state.order_repository = order_repository
     app.state.document_repository = document_repository
     app.state.document_storage = document_storage
+    app.state.document_queue = document_queue
     app.state.document_lifecycle = document_lifecycle
     app.state.document_review = document_review
     app.state.authentication = authentication
@@ -145,7 +155,7 @@ def create_app(
             )
         return profile
 
-    @app.post("/documents/analyze", response_model=DocumentAnalysisResponse)
+    @app.post("/documents/analyze", response_model=DocumentAnalysisResponse, status_code=202)
     async def analyze_document(
         file: UploadFile = File(...),
         purchase_order_reference: str = Form(...),
@@ -153,6 +163,7 @@ def create_app(
         upload_limit: int = Depends(_get_upload_limit),
         user: AuthenticatedUser = Depends(current_user),
         workspace_id: int = Header(alias="X-Workspace-ID"),
+        response: Response = None,
     ) -> DocumentAnalysisResponse | JSONResponse:
         roles = authentication.roles_for(user.id, workspace_id)
         if not roles:
@@ -180,20 +191,23 @@ def create_app(
         try:
             duplicate = document_lifecycle.find_duplicate(workspace_id, pdf_bytes)
             if duplicate is not None:
+                if response is not None:
+                    response.status_code = 200
                 return _analysis_response(duplicate, duplicate=True)
 
             order = repository.get_by_reference(purchase_order_reference, workspace_id)
             if order is None:
                 raise HTTPException(status_code=404, detail="Pedido de compra não encontrado.")
 
-            attempt = document_lifecycle.process_upload(
+            attempt = document_lifecycle.enqueue_upload(
                 workspace_id=workspace_id,
                 order_id=_order_id(repository, purchase_order_reference, workspace_id),
-                order=order,
                 original_filename=file.filename or "documento.pdf",
                 content_type=media_type,
                 content=pdf_bytes,
             )
+            if attempt.duplicate and response is not None:
+                response.status_code = 200
             return _analysis_response(attempt.document, duplicate=attempt.duplicate)
         except DocumentAttemptError as error:
             status_code = _processing_error_status(error.code)
@@ -210,6 +224,28 @@ def create_app(
                 status_code=500,
                 detail="Falha interna ao processar o documento.",
             ) from None
+
+    @app.post("/documents/{document_id}/reprocess", response_model=DocumentAnalysisResponse, status_code=202)
+    def reprocess_document(
+        document_id: int,
+        user: AuthenticatedUser = Depends(current_user),
+        workspace_id: int = Header(alias="X-Workspace-ID"),
+    ) -> DocumentAnalysisResponse:
+        _require_document_role(authentication, user, workspace_id, "operator")
+        try:
+            record = document_lifecycle.reprocess(document_id=document_id, workspace_id=workspace_id)
+            return _analysis_response(record, duplicate=False)
+        except DocumentNotFound:
+            raise HTTPException(status_code=404, detail="Documento não encontrado.") from None
+        except DocumentNotEligible:
+            raise HTTPException(status_code=409, detail="O documento não está elegível para reprocessamento.") from None
+        except DocumentAttemptError as error:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": str(error), "document_id": error.document_id, "processing_status": "failed"},
+            )
+        except SQLAlchemyError:
+            raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
 
     @app.get("/documents", response_model=list[DocumentSummary])
     def list_documents(
@@ -396,6 +432,7 @@ def _analysis_response(
         document_id=record.id,
         duplicate=duplicate,
         processing_status=record.processing_status,
+        state=record.processing_status,
         review_status=record.review_status,
         review_version=record.review_version,
         processing_error=record.processing_error,
@@ -474,6 +511,10 @@ def _document_detail(record: DocumentEntity, repository: DocumentRepository) -> 
 
 
 def _processing_error_status(code: str) -> int:
+    if code == "queue_unavailable":
+        return 503
+    if code == "storage_error":
+        return 500
     if code == "file_too_large":
         return 413
     if code == "provider_timeout":
