@@ -1,6 +1,8 @@
 import json
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
@@ -10,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.auth import AuthSettings, hash_password
 from backend.app.models.base import Base
+from backend.app.repositories.documents import SqlAlchemyDocumentRepository
 from backend.app.models.identity import User, Workspace, WorkspaceMembership
 from backend.app.repositories.purchase_orders import SqlAlchemyPurchaseOrderRepository
 from backend.app.seed_reference_order import seed_reference_order
@@ -18,6 +21,7 @@ from backend.app.services.document_processing import (
     DocumentProcessingConfig,
     DocumentProcessingService,
 )
+from backend.app.services.document_storage import DocumentFileStorage
 from backend.tests.test_document_processing import reference_payload
 from backend.tests.test_pdf_text_extractor import REFERENCE_TEXT, make_pdf
 
@@ -46,8 +50,8 @@ def create_client(test_case, *, response=None, provider_error=None, max_upload_b
         provider,
         config=DocumentProcessingConfig(pdf_max_bytes=max_upload_bytes),
     )
-    process = Mock(wraps=service.process)
-    service.process = process
+    process = Mock(wraps=service.process_with_pages)
+    service.process_with_pages = process
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -55,6 +59,7 @@ def create_client(test_case, *, response=None, provider_error=None, max_upload_b
     )
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(engine, expire_on_commit=False)
+    storage_dir = tempfile.TemporaryDirectory()
     seed_reference_order(session_factory)
     with session_factory.begin() as session:
         workspace = session.scalar(select(Workspace).where(Workspace.slug == "demo"))
@@ -68,6 +73,8 @@ def create_client(test_case, *, response=None, provider_error=None, max_upload_b
     app = create_app(
         document_processing_service=service,
         order_repository=SqlAlchemyPurchaseOrderRepository(session_factory),
+        document_repository=SqlAlchemyDocumentRepository(session_factory),
+        document_storage=DocumentFileStorage(Path(storage_dir.name)),
         session_factory=session_factory,
         auth_settings=AuthSettings("test-only-secret-key-with-at-least-32-bytes"),
         max_upload_bytes=max_upload_bytes,
@@ -81,6 +88,7 @@ def create_client(test_case, *, response=None, provider_error=None, max_upload_b
         },
     )
     test_case.addCleanup(engine.dispose)
+    test_case.addCleanup(storage_dir.cleanup)
     test_case.addCleanup(client.close)
     return client, provider, process
 
@@ -129,6 +137,7 @@ class ApiTests(unittest.TestCase):
         )
         Base.metadata.create_all(engine)
         session_factory = sessionmaker(engine, expire_on_commit=False)
+        storage_dir = tempfile.TemporaryDirectory()
         seed_reference_order(session_factory)
         with session_factory.begin() as session:
             workspace = session.scalar(select(Workspace).where(Workspace.slug == "demo"))
@@ -142,6 +151,8 @@ class ApiTests(unittest.TestCase):
         app = create_app(
             extraction_provider=provider,
             order_repository=SqlAlchemyPurchaseOrderRepository(session_factory),
+            document_repository=SqlAlchemyDocumentRepository(session_factory),
+            document_storage=DocumentFileStorage(Path(storage_dir.name)),
             session_factory=session_factory,
             auth_settings=AuthSettings("test-only-secret-key-with-at-least-32-bytes"),
         )
@@ -154,6 +165,7 @@ class ApiTests(unittest.TestCase):
             },
         )
         self.addCleanup(engine.dispose)
+        self.addCleanup(storage_dir.cleanup)
         self.addCleanup(client.close)
 
         response = client.post(

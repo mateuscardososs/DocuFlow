@@ -85,6 +85,10 @@ class PurchaseOrderRepositoryTests(unittest.TestCase):
         self.assertEqual(result.items[0].quantity, "10.000")
         self.assertEqual(result.items[0].unit_price, "85.50")
         self.assertEqual(result.total, "1250.00")
+        self.assertEqual(
+            self.repository.get_entity_id_by_reference("PC-2026-0001", self.workspace_id),
+            order_id,
+        )
 
     def test_reference_is_scoped_to_workspace(self):
         other_workspace_id = self.workspace_id + 100
@@ -227,6 +231,7 @@ class PurchaseOrderRepositoryTests(unittest.TestCase):
                 "users",
                 "workspaces",
                 "workspace_memberships",
+                "documents",
                 "suppliers",
                 "purchase_orders",
                 "purchase_order_items",
@@ -244,6 +249,10 @@ class PurchaseOrderRepositoryTests(unittest.TestCase):
         self.assertIn(
             "uq_purchase_order_items_order_code",
             {item["name"] for item in inspector.get_unique_constraints("purchase_order_items")},
+        )
+        self.assertIn(
+            "uq_documents_workspace_sha256",
+            {item["name"] for item in inspector.get_unique_constraints("documents")},
         )
         with migration_engine.connect() as connection:
             legacy = connection.execute(

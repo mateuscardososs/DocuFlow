@@ -11,6 +11,7 @@ from backend.app.schemas import PurchaseOrder
 
 class PurchaseOrderRepository(Protocol):
     def get_by_reference(self, reference: str, workspace_id: int) -> PurchaseOrder | None: ...
+    def get_entity_id_by_reference(self, reference: str, workspace_id: int) -> int | None: ...
 
 
 class SqlAlchemyPurchaseOrderRepository:
@@ -51,4 +52,13 @@ class SqlAlchemyPurchaseOrderRepository:
                     ],
                     "total": format(order.total, "f"),
                 }
+            )
+
+    def get_entity_id_by_reference(self, reference: str, workspace_id: int) -> int | None:
+        with self._session_factory() as session:
+            return session.scalar(
+                select(PurchaseOrderEntity.id).where(
+                    PurchaseOrderEntity.reference == reference,
+                    PurchaseOrderEntity.workspace_id == workspace_id,
+                )
             )

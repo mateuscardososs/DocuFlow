@@ -15,9 +15,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.models.identity import Workspace
+from backend.app.models.document import DocumentEntity
+from backend.app.schemas import ReferenceDocument
 from backend.app.models.purchase_order import PurchaseOrderEntity, PurchaseOrderItem, Supplier
 from backend.app.repositories.purchase_orders import SqlAlchemyPurchaseOrderRepository
+from backend.app.repositories.documents import SqlAlchemyDocumentRepository
 from backend.app.seed_reference_order import seed_reference_order
+from backend.app.services.document_processing import DocumentProcessingResult
+from backend.app.validation import ValidationReport
+from backend.tests.test_document_processing import reference_payload
 
 
 def _test_database_url() -> str:
@@ -60,19 +66,37 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         cls.legacy_references = []
         cls.legacy_suppliers = []
         cls.legacy_items = []
-        if "purchase_orders" in inspector.get_table_names() and "workspace_id" not in {
-            column["name"] for column in inspector.get_columns("purchase_orders")
-        }:
+        cls.pre_document_references = []
+        cls.pre_document_suppliers = []
+        cls.pre_document_items = []
+        if {"purchase_orders", "suppliers", "purchase_order_items"}.issubset(
+            set(inspector.get_table_names())
+        ):
+            has_workspace_scope = "workspace_id" in {
+                column["name"] for column in inspector.get_columns("purchase_orders")
+            }
+            has_documents = "documents" in inspector.get_table_names()
             with cls.engine.connect() as connection:
-                cls.legacy_references = connection.scalars(
-                    text("SELECT reference FROM purchase_orders ORDER BY id")
-                ).all()
-                cls.legacy_suppliers = connection.execute(
-                    text("SELECT id, identifier FROM suppliers ORDER BY id")
-                ).all()
-                cls.legacy_items = connection.execute(
-                    text("SELECT id, purchase_order_id, code FROM purchase_order_items ORDER BY id")
-                ).all()
+                if not has_workspace_scope:
+                    cls.legacy_references = connection.scalars(
+                        text("SELECT reference FROM purchase_orders ORDER BY id")
+                    ).all()
+                    cls.legacy_suppliers = connection.execute(
+                        text("SELECT id, identifier FROM suppliers ORDER BY id")
+                    ).all()
+                    cls.legacy_items = connection.execute(
+                        text("SELECT id, purchase_order_id, code FROM purchase_order_items ORDER BY id")
+                    ).all()
+                elif not has_documents:
+                    cls.pre_document_references = connection.execute(
+                        text("SELECT id, reference, workspace_id FROM purchase_orders ORDER BY id")
+                    ).all()
+                    cls.pre_document_suppliers = connection.execute(
+                        text("SELECT id, identifier, workspace_id FROM suppliers ORDER BY id")
+                    ).all()
+                    cls.pre_document_items = connection.execute(
+                        text("SELECT id, purchase_order_id, code FROM purchase_order_items ORDER BY id")
+                    ).all()
         with cls.engine.begin() as connection:
             config.attributes["connection"] = connection
             command.upgrade(config, "head")
@@ -95,12 +119,17 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         )
         with self.engine.connect() as connection:
             revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
-        self.assertEqual(revision, "20261013_0002")
+        self.assertEqual(revision, "20261014_0003")
         self.assertIn(
             "uq_purchase_orders_workspace_reference",
             {item["name"] for item in inspector.get_unique_constraints("purchase_orders")},
         )
         self.assertTrue(inspector.get_foreign_keys("purchase_orders"))
+        self.assertIn("documents", inspector.get_table_names())
+        self.assertIn(
+            "uq_documents_workspace_sha256",
+            {item["name"] for item in inspector.get_unique_constraints("documents")},
+        )
 
     def test_migration_keeps_legacy_orders_in_demo_workspace(self):
         with self.engine.connect() as connection:
@@ -127,6 +156,30 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
                 self.assertEqual(stored, (code, self.demo_workspace_id))
             count = connection.scalar(select(text("count(*)")).select_from(PurchaseOrderEntity))
         self.assertGreaterEqual(count, len(self.legacy_references))
+
+    def test_documents_migration_preserves_existing_orders_suppliers_and_items(self):
+        with self.engine.connect() as connection:
+            for order_id, reference, workspace_id in self.pre_document_references:
+                row = connection.execute(
+                    select(PurchaseOrderEntity.reference, PurchaseOrderEntity.workspace_id).where(
+                        PurchaseOrderEntity.id == order_id
+                    )
+                ).one()
+                self.assertEqual(row, (reference, workspace_id))
+            for supplier_id, identifier, workspace_id in self.pre_document_suppliers:
+                row = connection.execute(
+                    select(Supplier.identifier, Supplier.workspace_id).where(
+                        Supplier.id == supplier_id
+                    )
+                ).one()
+                self.assertEqual(row, (identifier, workspace_id))
+            for item_id, order_id, code in self.pre_document_items:
+                row = connection.execute(
+                    select(PurchaseOrderItem.code, PurchaseOrderEntity.id)
+                    .join(PurchaseOrderEntity)
+                    .where(PurchaseOrderItem.id == item_id)
+                ).one()
+                self.assertEqual(row, (code, order_id))
 
     def test_test_url_guard_rejects_application_database_even_with_other_credentials(self):
         with patch.dict(
@@ -280,6 +333,105 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
                         )
                     )
                     session.flush()
+
+    def test_document_repository_persists_and_deduplicates_per_workspace(self):
+        seed_reference_order(self.session_factory)
+        with Session(self.engine) as session:
+            demo_order_id = session.scalar(
+                select(PurchaseOrderEntity.id).where(
+                    PurchaseOrderEntity.workspace_id == self.demo_workspace_id,
+                    PurchaseOrderEntity.reference == "PC-2026-0001",
+                )
+            )
+            suffix = uuid4().hex
+            other_workspace = Workspace(slug=f"docs-{suffix}", name="Workspace documentos")
+            session.add(other_workspace)
+            session.flush()
+            other_supplier = Supplier(
+                workspace_id=other_workspace.id,
+                name="Fornecedor dos documentos",
+                identifier=f"FORN-DOC-{suffix}",
+            )
+            session.add(other_supplier)
+            session.flush()
+            other_order = PurchaseOrderEntity(
+                workspace_id=other_workspace.id,
+                reference=f"PC-DOC-{suffix}",
+                supplier_id=other_supplier.id,
+                currency="BRL",
+                total=Decimal("1.00"),
+                items=[
+                    PurchaseOrderItem(
+                        code="DOC-1",
+                        description="Item documento",
+                        quantity=Decimal("1"),
+                        unit_price=Decimal("1.00"),
+                        line_total=Decimal("1.00"),
+                    )
+                ],
+            )
+            session.add(other_order)
+            session.flush()
+            other_workspace_id = other_workspace.id
+            other_order_id = other_order.id
+            session.commit()
+
+        repository = SqlAlchemyDocumentRepository(self.session_factory)
+        checksum = uuid4().hex + uuid4().hex
+        document, duplicate = repository.create(
+            workspace_id=self.demo_workspace_id,
+            purchase_order_id=demo_order_id,
+            original_filename="nota.pdf",
+            size_bytes=123,
+            content_type="application/pdf",
+            sha256=checksum,
+            storage_key=f"{self.demo_workspace_id}/internal.pdf",
+        )
+        same, duplicate_again = repository.create(
+            workspace_id=self.demo_workspace_id,
+            purchase_order_id=demo_order_id,
+            original_filename="outro-nome.pdf",
+            size_bytes=123,
+            content_type="application/pdf",
+            sha256=checksum,
+            storage_key=f"{self.demo_workspace_id}/should-not-exist.pdf",
+        )
+        separate, duplicate_other_workspace = repository.create(
+            workspace_id=other_workspace_id,
+            purchase_order_id=other_order_id,
+            original_filename="nota.pdf",
+            size_bytes=123,
+            content_type="application/pdf",
+            sha256=checksum,
+            storage_key=f"{other_workspace_id}/internal.pdf",
+        )
+
+        self.assertFalse(duplicate)
+        self.assertTrue(duplicate_again)
+        self.assertEqual(same.id, document.id)
+        self.assertFalse(duplicate_other_workspace)
+        self.assertNotEqual(separate.id, document.id)
+        result = DocumentProcessingResult(
+            document=ReferenceDocument.model_validate(reference_payload()),
+            pdf_warnings=["A página 2 não contém texto utilizável."],
+            validation=ValidationReport(status="ready_for_review", findings=[]),
+            status="ready_for_review",
+        )
+        repository.save_result(
+            document_id=document.id,
+            workspace_id=self.demo_workspace_id,
+            result=result,
+            page_texts=[{"number": 1, "text": "Texto do PDF"}],
+        )
+        stored = repository.get_by_id(document.id, self.demo_workspace_id)
+        self.assertEqual(stored.sha256, checksum)
+        self.assertEqual(stored.processing_status, "succeeded")
+        self.assertEqual(stored.review_status, "pending")
+        self.assertEqual(stored.page_texts, [{"number": 1, "text": "Texto do PDF"}])
+        self.assertEqual(stored.pdf_warnings, ["A página 2 não contém texto utilizável."])
+        self.assertEqual(stored.validation_result["status"], "ready_for_review")
+        self.assertEqual(stored.extracted_document["document_number"]["value"], "DOC-2026-1042")
+        self.assertIsNone(repository.get_by_id(document.id, other_workspace_id))
 
     def test_supplier_order_and_item_uniqueness_constraints(self):
         suffix = uuid4().hex

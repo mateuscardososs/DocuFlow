@@ -36,6 +36,7 @@ class PurchaseOrderEntity(Base):
     __tablename__ = "purchase_orders"
     __table_args__ = (
         UniqueConstraint("workspace_id", "reference", name="uq_purchase_orders_workspace_reference"),
+        UniqueConstraint("id", "workspace_id", name="uq_purchase_orders_id_workspace"),
         ForeignKeyConstraint(
             ["supplier_id", "workspace_id"],
             ["suppliers.id", "suppliers.workspace_id"],

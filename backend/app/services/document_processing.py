@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from backend.app.schemas import PurchaseOrder, ReferenceDocument
-from backend.app.services.pdf_text_extractor import DEFAULT_MAX_BYTES, extract_pdf_text
+from backend.app.services.pdf_text_extractor import DEFAULT_MAX_BYTES, PageText, extract_pdf_text
 from backend.app.services.structured_extraction import (
     ExtractionProvider,
     StructuredExtractionConfig,
@@ -38,6 +38,12 @@ class DocumentProcessingService:
         self.config = config
 
     def process(self, pdf_bytes: bytes, order: PurchaseOrder) -> DocumentProcessingResult:
+        result, _ = self.process_with_pages(pdf_bytes, order)
+        return result
+
+    def process_with_pages(
+        self, pdf_bytes: bytes, order: PurchaseOrder
+    ) -> tuple[DocumentProcessingResult, list[PageText]]:
         pdf_result = extract_pdf_text(pdf_bytes, max_bytes=self.config.pdf_max_bytes)
         page_texts = {page.number: page.text for page in pdf_result.pages}
 
@@ -47,9 +53,10 @@ class DocumentProcessingService:
         ).extract(page_texts)
         validation = validate_document(document, order, page_texts)
 
-        return DocumentProcessingResult(
+        result = DocumentProcessingResult(
             document=document,
             pdf_warnings=pdf_result.warnings,
             validation=validation,
             status=validation.status,
         )
+        return result, pdf_result.pages

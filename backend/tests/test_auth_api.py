@@ -1,8 +1,10 @@
 import json
 import os
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
 from unittest.mock import patch
 
 import jwt
@@ -13,9 +15,11 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.auth import AuthSettings, hash_password
 from backend.app.models.base import Base
+from backend.app.repositories.documents import SqlAlchemyDocumentRepository
 from backend.app.models.identity import User, Workspace, WorkspaceMembership
 from backend.app.models.purchase_order import PurchaseOrderEntity, PurchaseOrderItem, Supplier
 from backend.app.repositories.purchase_orders import SqlAlchemyPurchaseOrderRepository
+from backend.app.services.document_storage import DocumentFileStorage
 from backend.app.services.document_processing import (
     DocumentProcessingConfig,
     DocumentProcessingService,
@@ -38,6 +42,7 @@ class StubProvider:
 
 class AuthApiTests(unittest.TestCase):
     def setUp(self):
+        self.storage_dir = tempfile.TemporaryDirectory()
         self.engine = create_engine(
             "sqlite://",
             connect_args={"check_same_thread": False},
@@ -56,6 +61,7 @@ class AuthApiTests(unittest.TestCase):
     def tearDown(self):
         self.client.close()
         self.engine.dispose()
+        self.storage_dir.cleanup()
 
     def _make_app(self):
         from backend.app.api.app import create_app
@@ -64,6 +70,8 @@ class AuthApiTests(unittest.TestCase):
         return create_app(
             document_processing_service=service,
             order_repository=SqlAlchemyPurchaseOrderRepository(self.session_factory),
+            document_repository=SqlAlchemyDocumentRepository(self.session_factory),
+            document_storage=DocumentFileStorage(Path(self.storage_dir.name)),
             session_factory=self.session_factory,
             auth_settings=self.auth_settings,
         )
