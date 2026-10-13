@@ -1,4 +1,4 @@
-"""Armazenamento privado de PDFs com chaves internas aleatórias."""
+"""Armazenamento privado de arquivos com chaves internas aleatórias."""
 
 from pathlib import Path
 import os
@@ -9,8 +9,10 @@ class DocumentFileStorage:
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root).expanduser().resolve()
 
-    def new_key(self, workspace_id: int) -> str:
-        return f"{workspace_id}/{uuid4().hex}.pdf"
+    def new_key(self, workspace_id: int, extension: str = ".pdf") -> str:
+        if extension not in {".pdf", ".png", ".jpg"}:
+            raise ValueError("Extensão de armazenamento não suportada.")
+        return f"{workspace_id}/{uuid4().hex}{extension}"
 
     def store(self, key: str, content: bytes) -> Path:
         path = self.path_for(key)

@@ -3,6 +3,7 @@
 import warnings
 from dataclasses import dataclass
 from io import BytesIO
+from typing import Literal
 
 from pypdf import PdfReader
 from pypdf.errors import PdfReadWarning
@@ -24,6 +25,7 @@ class PdfExtractionError(Exception):
 class PageText:
     number: int
     text: str
+    source: Literal["native", "ocr"] = "native"
 
 
 @dataclass
@@ -82,7 +84,7 @@ def extract_pdf_text(
             page_warnings: list[str] = []
             for number, page in enumerate(reader.pages, start=1):
                 text = page.extract_text() or ""
-                pages.append(PageText(number=number, text=text))
+                pages.append(PageText(number=number, text=text, source="native"))
                 if not text.strip():
                     page_warnings.append(f"A página {number} não contém texto utilizável.")
             return PdfTextExtractionResult(pages=pages, warnings=page_warnings)

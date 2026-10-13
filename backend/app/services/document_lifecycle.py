@@ -68,7 +68,12 @@ class DocumentLifecycleService:
             size_bytes=len(content),
             content_type=content_type,
             sha256=self.digest(content),
-            storage_key=self.storage.new_key(workspace_id),
+            storage_key=self.storage.new_key(
+                workspace_id,
+                {"application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg"}.get(
+                    content_type, ".pdf"
+                ),
+            ),
         )
         if duplicate:
             return DocumentAttempt(document=document, duplicate=True)

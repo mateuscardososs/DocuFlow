@@ -3,8 +3,11 @@
 import json
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import Mock, patch
+
+from PIL import Image
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -114,6 +117,26 @@ class AsyncDocumentApiTests(unittest.TestCase):
         self.assertEqual(len(self.queue.calls), 1)
         self.assertEqual(self.queue.calls[0][0], body["document_id"])
         self.assertEqual(self.provider.calls, 0)
+
+    def test_upload_accepts_png_and_jpeg_with_private_internal_extensions(self):
+        for image_format, media_type, filename, suffix in (
+            ("PNG", "image/png", "scan.png", ".png"),
+            ("JPEG", "image/jpeg", "scan.jpg", ".jpg"),
+        ):
+            with self.subTest(media_type=media_type):
+                image = BytesIO()
+                Image.new("RGB", (30, 20), "white").save(image, format=image_format)
+                response = self.client.post(
+                    "/documents/analyze",
+                    data={"purchase_order_reference": "PC-2026-0001"},
+                    files={"file": (filename, image.getvalue(), media_type)},
+                )
+                self.assertEqual(response.status_code, 202, response.text)
+                with self.sessions() as session:
+                    record = session.get(DocumentEntity, response.json()["document_id"])
+                    self.assertEqual(record.content_type, media_type)
+                    self.assertTrue(record.storage_key.endswith(suffix))
+                    self.assertTrue(self.storage.path_for(record.storage_key).is_file())
 
     def test_enqueue_failure_keeps_document_for_retry(self):
         self.queue.error = RuntimeError("redis password=private")

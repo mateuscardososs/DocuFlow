@@ -5,6 +5,7 @@ from backend.app.repositories.purchase_orders import PurchaseOrderRepository
 from backend.app.services.document_processing import DocumentProcessingService
 from backend.app.services.document_queue import DocumentQueueConfig
 from backend.app.services.document_storage import DocumentFileStorage
+from backend.app.services.document_text_extractor import DocumentTextExtractionError
 from backend.app.services.pdf_text_extractor import PdfExtractionError
 from backend.app.services.structured_extraction import StructuredExtractionError
 
@@ -40,12 +41,17 @@ class DocumentWorkerService:
             if order is None:
                 raise RuntimeError("Pedido não disponível")
             pdf_bytes = self.storage.path_for(document.storage_key).read_bytes()
-            result, pages = self.processing.process_with_pages(pdf_bytes, order)
+            result, pages = self.processing.process_with_pages(
+                pdf_bytes, order, content_type=document.content_type
+            )
             self.documents.save_result(
                 document_id=document.id,
                 workspace_id=document.workspace_id,
                 result=result,
-                page_texts=[{"number": page.number, "text": page.text} for page in pages],
+                page_texts=[
+                    {"number": page.number, "text": page.text, "source": page.source}
+                    for page in pages
+                ],
                 job_id=job_id,
             )
         except Exception as error:
@@ -72,7 +78,7 @@ class DocumentWorkerService:
 
 
 def _safe_attempt_message(error: Exception) -> str:
-    if isinstance(error, PdfExtractionError):
+    if isinstance(error, (PdfExtractionError, DocumentTextExtractionError)):
         return str(error)
     if isinstance(error, StructuredExtractionError):
         return str(error)

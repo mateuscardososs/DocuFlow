@@ -172,9 +172,12 @@ def create_app(
             raise HTTPException(status_code=403, detail="O papel operator é necessário para analisar.")
 
         media_type = (file.content_type or "").split(";", 1)[0].strip().lower()
-        if media_type != "application/pdf":
+        if media_type not in {"application/pdf", "image/png", "image/jpeg"}:
             await file.close()
-            raise HTTPException(status_code=415, detail="Envie um arquivo com tipo application/pdf.")
+            raise HTTPException(
+                status_code=415,
+                detail="Envie um arquivo PDF, PNG ou JPEG.",
+            )
 
         if file.size is not None and file.size > upload_limit:
             await file.close()
@@ -202,7 +205,12 @@ def create_app(
             attempt = document_lifecycle.enqueue_upload(
                 workspace_id=workspace_id,
                 order_id=_order_id(repository, purchase_order_reference, workspace_id),
-                original_filename=file.filename or "documento.pdf",
+                original_filename=file.filename
+                or {
+                    "application/pdf": "documento.pdf",
+                    "image/png": "documento.png",
+                    "image/jpeg": "documento.jpg",
+                }[media_type],
                 content_type=media_type,
                 content=pdf_bytes,
             )
@@ -297,7 +305,7 @@ def create_app(
             raise HTTPException(status_code=404, detail="Arquivo não encontrado.") from None
         if not path.is_file():
             raise HTTPException(status_code=404, detail="Arquivo não encontrado.")
-        return FileResponse(path, filename=record.original_filename, media_type="application/pdf")
+        return FileResponse(path, filename=record.original_filename, media_type=record.content_type)
 
     @app.patch("/documents/{document_id}/review", response_model=DocumentReviewResponse)
     def correct_document(

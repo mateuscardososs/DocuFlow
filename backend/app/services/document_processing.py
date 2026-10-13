@@ -4,7 +4,11 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from backend.app.schemas import PurchaseOrder, ReferenceDocument
-from backend.app.services.pdf_text_extractor import DEFAULT_MAX_BYTES, PageText, extract_pdf_text
+from backend.app.services.document_text_extractor import (
+    DocumentTextExtractor,
+    OcrConfig,
+)
+from backend.app.services.pdf_text_extractor import DEFAULT_MAX_BYTES, PageText
 from backend.app.services.structured_extraction import (
     ExtractionProvider,
     StructuredExtractionConfig,
@@ -17,6 +21,7 @@ from backend.app.validation import ValidationReport, validate_document
 class DocumentProcessingConfig:
     pdf_max_bytes: int = DEFAULT_MAX_BYTES
     extraction: StructuredExtractionConfig = field(default_factory=StructuredExtractionConfig)
+    ocr: OcrConfig = field(default_factory=OcrConfig)
 
 
 @dataclass(frozen=True)
@@ -33,30 +38,45 @@ class DocumentProcessingService:
         provider: ExtractionProvider,
         *,
         config: DocumentProcessingConfig = DocumentProcessingConfig(),
+        text_extractor: DocumentTextExtractor | None = None,
     ) -> None:
         self.provider = provider
         self.config = config
+        self.text_extractor = text_extractor or DocumentTextExtractor(
+            max_bytes=config.pdf_max_bytes,
+            config=config.ocr,
+        )
 
-    def process(self, pdf_bytes: bytes, order: PurchaseOrder) -> DocumentProcessingResult:
-        result, _ = self.process_with_pages(pdf_bytes, order)
+    def process(
+        self,
+        pdf_bytes: bytes,
+        order: PurchaseOrder,
+        *,
+        content_type: str = "application/pdf",
+    ) -> DocumentProcessingResult:
+        result, _ = self.process_with_pages(pdf_bytes, order, content_type=content_type)
         return result
 
     def process_with_pages(
-        self, pdf_bytes: bytes, order: PurchaseOrder
+        self,
+        pdf_bytes: bytes,
+        order: PurchaseOrder,
+        *,
+        content_type: str = "application/pdf",
     ) -> tuple[DocumentProcessingResult, list[PageText]]:
-        pdf_result = extract_pdf_text(pdf_bytes, max_bytes=self.config.pdf_max_bytes)
-        page_texts = {page.number: page.text for page in pdf_result.pages}
+        extraction_result = self.text_extractor.extract(pdf_bytes, content_type)
+        page_texts = {page.number: page.text for page in extraction_result.pages}
 
         document = StructuredExtractionService(
             self.provider,
             config=self.config.extraction,
-        ).extract(page_texts)
+        ).extract(extraction_result.pages)
         validation = validate_document(document, order, page_texts)
 
         result = DocumentProcessingResult(
             document=document,
-            pdf_warnings=pdf_result.warnings,
+            pdf_warnings=extraction_result.warnings,
             validation=validation,
             status=validation.status,
         )
-        return result, pdf_result.pages
+        return result, extraction_result.pages

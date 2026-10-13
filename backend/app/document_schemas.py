@@ -14,6 +14,7 @@ class DocumentPageText(BaseModel):
 
     number: int
     text: str
+    source: Literal["native", "ocr"] = "native"
 
 
 class DocumentSummary(BaseModel):

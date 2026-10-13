@@ -2,10 +2,13 @@ import json
 import stat
 import tempfile
 import unittest
+from io import BytesIO
 from decimal import Decimal
 from hashlib import sha256
 from pathlib import Path
 from unittest.mock import Mock
+
+from PIL import Image
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select
@@ -24,6 +27,7 @@ from backend.app.services.document_processing import (
     DocumentProcessingConfig,
     DocumentProcessingService,
 )
+from backend.app.services.document_text_extractor import DocumentTextExtractor
 from backend.tests.test_api import StubProvider
 from backend.tests.test_document_processing import reference_payload
 from backend.tests.test_pdf_text_extractor import REFERENCE_TEXT, make_pdf
@@ -31,6 +35,11 @@ from backend.tests.inline_queue import InlineDocumentQueue
 
 
 JWT_SECRET = "test-only-secret-key-with-at-least-32-bytes"
+
+
+class StubOcr:
+    def recognize(self, image: bytes, media_type: str) -> str:
+        return REFERENCE_TEXT
 
 
 class DocumentPersistenceApiTests(unittest.TestCase):
@@ -92,6 +101,7 @@ class DocumentPersistenceApiTests(unittest.TestCase):
         processing = DocumentProcessingService(
             self.provider,
             config=DocumentProcessingConfig(),
+            text_extractor=DocumentTextExtractor(ocr_engine=StubOcr()),
         )
         self.process = Mock(wraps=processing.process_with_pages)
         processing.process_with_pages = self.process
@@ -164,6 +174,7 @@ class DocumentPersistenceApiTests(unittest.TestCase):
         self.assertEqual(record.processing_status, "ready_for_review")
         self.assertEqual(record.review_status, "pending")
         self.assertEqual(record.page_texts[0]["number"], 1)
+        self.assertEqual(record.page_texts[0]["source"], "native")
         self.assertIn("METALURGICA HORIZONTE", record.page_texts[0]["text"])
         self.assertEqual(record.extracted_document["document_number"]["value"], "DOC-2026-1042")
         self.assertEqual(record.pdf_warnings, [])
@@ -184,6 +195,21 @@ class DocumentPersistenceApiTests(unittest.TestCase):
         with self.session_factory() as session:
             count = session.scalar(select(func.count()).select_from(DocumentEntity))
         self.assertEqual(count, 1)
+
+    def test_scanned_image_is_processed_by_worker_and_origin_is_persisted(self):
+        image = BytesIO()
+        Image.new("RGB", (40, 20), "white").save(image, format="PNG")
+        response = self.client.post(
+            "/documents/analyze",
+            data={"purchase_order_reference": "PC-2026-0001"},
+            files={"file": ("scan.png", image.getvalue(), "image/png")},
+        )
+
+        self.assertEqual(response.status_code, 202, response.text)
+        record = self._document(response.json()["document_id"])
+        self.assertEqual(record.processing_status, "ready_for_review")
+        self.assertEqual(record.page_texts[0]["source"], "ocr")
+        self.assertIn("DOC-2026-1042", record.page_texts[0]["text"])
 
     def test_same_hash_can_be_registered_in_another_workspace(self):
         with self.session_factory.begin() as session:

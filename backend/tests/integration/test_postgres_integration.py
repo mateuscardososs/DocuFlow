@@ -436,13 +436,16 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
             document_id=document.id,
             workspace_id=self.demo_workspace_id,
             result=result,
-            page_texts=[{"number": 1, "text": "Texto do PDF"}],
+            page_texts=[{"number": 1, "text": "Texto do PDF", "source": "native"}],
         )
         stored = repository.get_by_id(document.id, self.demo_workspace_id)
         self.assertEqual(stored.sha256, checksum)
         self.assertEqual(stored.processing_status, "ready_for_review")
         self.assertEqual(stored.review_status, "pending")
-        self.assertEqual(stored.page_texts, [{"number": 1, "text": "Texto do PDF"}])
+        self.assertEqual(
+            stored.page_texts,
+            [{"number": 1, "text": "Texto do PDF", "source": "native"}],
+        )
         self.assertEqual(stored.pdf_warnings, ["A página 2 não contém texto utilizável."])
         self.assertEqual(stored.validation_result["status"], "ready_for_review")
         self.assertEqual(stored.extracted_document["document_number"]["value"], "DOC-2026-1042")

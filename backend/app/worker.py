@@ -9,6 +9,7 @@ from backend.app.integrations.ollama_extraction import OllamaConfig, OllamaExtra
 from backend.app.repositories.documents import SqlAlchemyDocumentRepository
 from backend.app.repositories.purchase_orders import SqlAlchemyPurchaseOrderRepository
 from backend.app.services.document_processing import DocumentProcessingConfig, DocumentProcessingService
+from backend.app.services.document_text_extractor import OcrConfig
 from backend.app.services.document_queue import DocumentQueueConfig
 from backend.app.services.document_storage import DocumentFileStorage
 from backend.app.services.document_worker import DocumentWorkerService
@@ -23,7 +24,10 @@ def create_worker_service() -> tuple[DocumentWorkerService, object]:
     provider = OllamaExtractionProvider(
         OllamaConfig(model=os.getenv("DOCUFLOW_OLLAMA_MODEL", "gemma4"))
     )
-    processing = DocumentProcessingService(provider, config=DocumentProcessingConfig())
+    processing = DocumentProcessingService(
+        provider,
+        config=DocumentProcessingConfig(ocr=OcrConfig.from_environment()),
+    )
     worker = DocumentWorkerService(documents, orders, storage, processing, config)
     return worker, database.engine
 

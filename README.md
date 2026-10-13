@@ -2,7 +2,7 @@
 
 Aplicação demonstrativa para conferir documentos comerciais fictícios de fornecedores contra pedidos de compra. A IA extrai campos com evidências; o backend valida as regras; uma pessoa revisa antes de qualquer lançamento.
 
-O sistema não é fiscal ou contábil certificado e não processa documentos reais nesta etapa.
+A aplicação é demonstrativa, não é fiscal ou contábil certificada e exige revisão humana: texto reconhecido por OCR pode conter erros.
 
 ## Primeiro fluxo
 
@@ -38,7 +38,7 @@ As dependências do backend são declaradas em `requirements.txt` e verificadas 
 
 ## Dependências do backend
 
-`pypdf` lê o texto nativo dos PDFs localmente, sem OCR nem dependências de sistema. `FastAPI` expõe as rotas; `python-multipart` analisa formulários com arquivos; `httpx` atende ao `TestClient`; `uvicorn` inicia o servidor ASGI; SQLAlchemy e Psycopg conectam ao PostgreSQL; Alembic aplica migrações; `pwdlib[argon2]` armazena senhas com Argon2id; PyJWT assina e valida tokens; `rq` executa jobs e `redis` conecta ao Redis. RQ 2.12.0 e redis-py 8.1.0 foram instalados e verificados em Python 3.14 ([documentação RQ: jobs, timeout e tentativas](https://python-rq.org/docs/), [documentação redis-py](https://redis.readthedocs.io/en/stable/), [metadados Python do RQ](https://pypi.org/project/rq/2.12.0/), [metadados Python do redis-py](https://pypi.org/project/redis/)). As versões instaladas e verificadas no ambiente incluem FastAPI 0.143.0, python-multipart 0.0.32, httpx 0.28.1, Uvicorn 0.54.0, SQLAlchemy 2.1.4, Alembic 1.20.0, Psycopg 3.3.6, pwdlib 0.3.1, argon2-cffi 25.1.0 e PyJWT 2.15.1. Para instalar as dependências e rodar os testes:
+`pypdf` lê texto nativo de PDFs. Para páginas sem texto utilizável, `pypdfium2` renderiza a página localmente e o executável Tesseract faz OCR; Pillow valida e normaliza PNG/JPEG. O OCR não usa serviços externos e sua saída ainda passa pelas mesmas verificações de evidência e validação comercial. `pypdfium2` 5.14.0 e Pillow 12.3.0 foram instalados no Python 3.14.4 do projeto; os metadados oficiais declaram suporte a Python 3.14 ([pypdfium2 no PyPI](https://pypi.org/project/pypdfium2/), [Pillow no PyPI](https://pypi.org/project/pillow/)). O Tesseract é uma dependência de sistema separada: instale o mecanismo e os dados dos idiomas ([instalação oficial](https://tesseract-ocr.github.io/tessdoc/Installation.html), [dados de idioma](https://tesseract-ocr.github.io/tessdoc/Data-Files.html)). No macOS use `brew install tesseract`; em Debian/Ubuntu use `sudo apt install tesseract-ocr tesseract-ocr-por tesseract-ocr-eng`. A integração usa a CLI documentada pelo Tesseract ([uso da linha de comando](https://tesseract-ocr.github.io/tessdoc/Command-Line-Usage.html)). As demais bibliotecas servem à API, autenticação, PostgreSQL e fila; RQ 2.12.0 e redis-py 8.1.0 também foram instalados e verificados em Python 3.14 ([documentação RQ](https://python-rq.org/docs/), [documentação redis-py](https://redis.readthedocs.io/en/stable/)). Para instalar as dependências e rodar os testes:
 
 ```bash
 python3 -m venv .venv
@@ -54,15 +54,15 @@ Inicie a aplicação localmente com:
 .venv/bin/uvicorn backend.app.main:app --reload
 ```
 
-`GET /health` retorna `{"status":"ok"}`. `POST /auth/token` recebe formulário OAuth2 com `username` (e-mail) e `password`, e retorna um token Bearer. `GET /auth/me` exige esse token e lista o usuário, workspaces e papéis disponíveis. `POST /documents/analyze` também exige `Authorization: Bearer <token>` e o cabeçalho `X-Workspace-ID`. O formulário multipart contém `file` (`application/pdf`) e `purchase_order_reference` (por exemplo, `PC-2026-0001`). O backend confirma o vínculo do usuário ao workspace, exige o papel `operator` e só então busca o pedido naquele workspace. O repositório aplica o filtro de workspace na consulta.
+`GET /health` retorna `{"status":"ok"}`. `POST /auth/token` recebe formulário OAuth2 com `username` (e-mail) e `password`, e retorna um token Bearer. `GET /auth/me` exige esse token e lista o usuário, workspaces e papéis disponíveis. `POST /documents/analyze` também exige `Authorization: Bearer <token>` e o cabeçalho `X-Workspace-ID`. O formulário multipart contém `file` (PDF, PNG ou JPEG) e `purchase_order_reference` (por exemplo, `PC-2026-0001`). O backend confirma o vínculo do usuário ao workspace, exige o papel `operator` e só então busca o pedido naquele workspace. O repositório aplica o filtro de workspace na consulta.
 
-`POST /documents/analyze` valida tipo e tamanho, grava o registro e o PDF privado e só então enfileira o job. A resposta inicial é HTTP 202 com `document_id` e `state: queued`. `review_status` continua independente e começa como `pending`; nenhum documento é aprovado automaticamente. Reenviar bytes com o mesmo SHA-256 no mesmo workspace retorna HTTP 200 com `duplicate: true` e o ID já registrado. O mesmo arquivo pode ser registrado em outro workspace.
+`POST /documents/analyze` valida tipo e tamanho, grava o registro e o arquivo privado e só então enfileira o job. A resposta inicial é HTTP 202 com `document_id` e `state: queued`. `review_status` continua independente e começa como `pending`; nenhum documento é aprovado automaticamente. Reenviar bytes com o mesmo SHA-256 no mesmo workspace retorna HTTP 200 com `duplicate: true` e o ID já registrado. O mesmo arquivo pode ser registrado em outro workspace.
 
-O fluxo de processamento tem os estados `queued → processing → ready_for_review` ou `failed`. Redis/RQ recebe apenas o ID do documento como argumento; o worker carrega o pedido no workspace registrado e o PDF pela chave interna. Se Redis estiver indisponível depois que o upload foi persistido, a API retorna HTTP 503, mantém o arquivo e o documento como `failed` com mensagem segura e permite nova tentativa. `POST /documents/{id}/reprocess` exige `operator`, associação ao workspace e estado `failed`; documentos prontos ou aprovados não são reprocessados. O worker confere o estado, workspace, ID RQ ativo e aprovação dentro do PostgreSQL antes de iniciar e antes de gravar o resultado. Isso impede que jobs repetidos ou antigos substituam resultados prontos, revisões ou snapshots aprovados; não oferece execução exatamente uma vez.
+O fluxo de processamento tem os estados `queued → processing → ready_for_review` ou `failed`. Redis/RQ recebe apenas o ID do documento como argumento; o worker carrega o pedido no workspace registrado e o arquivo pela chave interna. Se Redis estiver indisponível depois que o upload foi persistido, a API retorna HTTP 503, mantém o arquivo e o documento como `failed` com mensagem segura e permite nova tentativa. `POST /documents/{id}/reprocess` exige `operator`, associação ao workspace e estado `failed`; documentos prontos ou aprovados não são reprocessados. O worker confere o estado, workspace, ID RQ ativo e aprovação dentro do PostgreSQL antes de iniciar e antes de gravar o resultado. Isso impede que jobs repetidos ou antigos substituam resultados prontos, revisões ou snapshots aprovados; não oferece execução exatamente uma vez.
 
 RQ aplica timeout por job e número máximo de tentativas configurável. Erros terminais deixam `processing_status: failed` e uma mensagem segura; o PDF e o histórico são mantidos. Se o worker cair de forma abrupta e o documento ficar em `processing`, o comando de recuperação busca execuções mais antigas que `DOCUFLOW_STALE_AFTER_SECONDS`, invalida o job antigo no banco e cria outro job. Se Redis ou o worker estiver indisponível, uploads podem permanecer em `queued` até que o serviço volte; falha de enqueue é registrada como `failed`, pronta para chamada explícita de reprocessamento.
 
-`GET /documents` lista documentos do workspace selecionado e aceita `limit` (1–100) e `offset`. `GET /documents/{id}` retorna metadados e resultado persistido. `GET /documents/{id}/download` baixa o PDF original. Os três endpoints exigem token e `X-Workspace-ID`; qualquer associação ao workspace permite consultar, mas os IDs são sempre filtrados pelo workspace e o download não expõe a chave interna.
+`GET /documents` lista documentos do workspace selecionado e aceita `limit` (1–100) e `offset`. `GET /documents/{id}` retorna metadados e resultado persistido. `GET /documents/{id}/download` baixa o arquivo original. Os três endpoints exigem token e `X-Workspace-ID`; qualquer associação ao workspace permite consultar, mas os IDs são sempre filtrados pelo workspace e o download não expõe a chave interna.
 
 ## Revisão humana
 
@@ -80,7 +80,9 @@ Depois que o worker termina, `GET /documents/{id}` retorna o documento extraído
 
 Os papéis `operator` e `approver` são associações independentes. Um usuário pode ter ambos; `operator` analisa e corrige documentos, enquanto `approver` aprova ou rejeita. JWT usa HS256, expira em 30 minutos por padrão e exige uma chave definida no ambiente com ao menos 32 bytes. `JWT_SECRET_KEY` não tem valor padrão no código e a aplicação se recusa a iniciar sem uma chave válida. Para desenvolvimento local, gere uma chave com `openssl rand -hex 32`, coloque o resultado apenas em `.env` e ajuste `ACCESS_TOKEN_EXPIRE_MINUTES` se necessário. Não compartilhe nem versione `.env`.
 
-O limite de upload é 10 MiB por padrão. `UploadFile` mantém uploads grandes em arquivo temporário em vez de carregá-los integralmente na memória; a rota verifica o tamanho informado e lê no máximo limite + 1 bytes antes de processar. O serviço de PDF existente também aplica seu limite.
+O limite de upload é 10 MiB por padrão e o limite de PDF é cinco páginas. `UploadFile` mantém uploads grandes em arquivo temporário em vez de carregá-los integralmente na memória; a rota verifica o tamanho informado e lê no máximo limite + 1 bytes antes de processar. PNG e JPEG são tratados como uma única página. O extrator mantém texto PDF nativo a partir do mínimo configurado e chama OCR somente nas páginas abaixo desse limiar. A origem de cada página (`native` ou `ocr`) é persistida. PDF com senha, arquivo inválido e imagem de tipo/resolução incorretos falham com mensagens seguras. A validação de evidências compara a citação com o texto da página, mas texto OCR não confirma a precisão dos valores: a revisão humana continua necessária.
+
+O worker lê as variáveis `DOCUFLOW_OCR_LANGUAGE` (`por+eng`), `DOCUFLOW_OCR_DPI` (`300`), `DOCUFLOW_OCR_TIMEOUT_SECONDS` (`30`), `DOCUFLOW_NATIVE_TEXT_MIN_CHARS` (`1`, contando caracteres após normalizar espaços) e `DOCUFLOW_TESSERACT_CMD` (`tesseract`). A CLI e os dados de idioma precisam estar instalados no host/container que executa o worker. Para renderização, o DPI deve ser pelo menos 72 e imagens maiores que 40 megapixels são recusadas para limitar memória.
 
 A rota de upload consulta `PurchaseOrderRepository`; em execução normal, `SqlAlchemyPurchaseOrderRepository` usa as tabelas PostgreSQL. Após salvar o registro e o arquivo privado, a API enfileira apenas o ID do documento e responde HTTP 202. O worker carrega o pedido, o documento e o arquivo do PostgreSQL/armazenamento e então chama `DocumentProcessingService` com o `ExtractionProvider`. Esses componentes continuam substituíveis nos testes. O worker padrão usa `OllamaExtractionProvider`; configure o modelo com `DOCUFLOW_OLLAMA_MODEL` (padrão `gemma4`). Os testes substituem o provedor por um stub e não chamam Ollama.
 
@@ -162,11 +164,25 @@ Os testes unitários usam SQLite temporário e adaptadores de fila/provedor simu
 ./.venv/bin/python -m unittest discover -s backend/tests -v
 ```
 
-Os testes de integração rodam separadamente contra o PostgreSQL local e exigem `TEST_DATABASE_URL` apontando para `localhost` e para o banco dedicado `docuflow_test`. Eles aplicam apenas `upgrade head`, não removem tabelas nem limpam dados; os registros criados pelos testes permanecem nessa base de teste. O helper também recusa SQLite, outros nomes de banco e uma URL igual a `DATABASE_URL`. Nenhum teste exige um Redis real: o contrato do adaptador RQ usa fila simulada, e as proteções de estado e recuperação usam repositórios SQLite/PostgreSQL.
+Os testes de integração PostgreSQL rodam separadamente contra a base local dedicada `docuflow_test`. Eles aplicam apenas `upgrade head`, não removem tabelas nem limpam dados; os registros criados permanecem nessa base. O helper recusa SQLite, outros nomes de banco e uma URL igual a `DATABASE_URL`.
 
 ```bash
 ./.venv/bin/python -m unittest discover -s backend/tests/integration -v
 ```
+
+O teste `test_rq_real_integration` também usa Redis real quando `TEST_REDIS_URL` está definida. Ele cria um nome de fila aleatório, executa um worker RQ em modo burst e usa um provedor determinístico exclusivo dos testes; não chama Ollama. Se `TEST_DATABASE_URL` ou `TEST_REDIS_URL` estiver ausente, o teste é marcado como ignorado. O padrão do `.env.example` separa a base lógica Redis de teste (`/15`) da fila normal (`/0`). A limpeza remove apenas jobs e chaves da fila aleatória criada pela execução; não usa `FLUSHDB` nem apaga volumes.
+
+Para executar o teste real, inicie PostgreSQL e Redis do Compose sem recriar volumes, carregue as variáveis e rode a integração:
+
+```bash
+docker compose up -d postgres redis
+set -a
+. ./.env
+set +a
+./.venv/bin/python -m unittest discover -s backend/tests/integration -v
+```
+
+Os testes unitários continuam sem depender de Redis. A integração real verifica que documento e arquivo existem antes do enqueue, que o job contém apenas o ID, a transição pelo worker, job repetido e recuperação após interrupção simulada.
 
 O SQL de inicialização do Compose cria a base de teste somente quando o volume PostgreSQL é inicializado pela primeira vez. Se estiver usando um volume local existente no qual essa base ainda não existe, crie-a sem apagar o volume com `docker compose exec postgres createdb -U docuflow docuflow_test` (ajuste o usuário se mudou `POSTGRES_USER`). Para parar o serviço mantendo todos os dados, use `docker compose stop postgres`; para iniciá-lo novamente, `docker compose start postgres`. Não use `down -v` para encerrar o ambiente.
 
@@ -174,4 +190,12 @@ O SQL de inicialização do Compose cria a base de teste somente quando o volume
 
 O serviço `StructuredExtractionService` recebe um provedor pela interface `ExtractionProvider`; o adaptador `OllamaExtractionProvider` usa `POST /api/chat` localmente e envia o schema de `ReferenceDocument` no campo `format`. Configure o nome do modelo e o timeout em `OllamaConfig`; `StructuredExtractionConfig.max_attempts` limita as tentativas de comunicação (padrão: 2). Os testes simulam o provedor e não exigem Ollama em execução.
 
-`DocumentProcessingService` compõe o extrator de PDF, o serviço estruturado e a validação comercial. Ele devolve o documento, avisos do PDF, relatório de validação e estado final; erros das etapas são propagados sem incluir os bytes do arquivo no resultado.
+`DocumentProcessingService` compõe a extração nativa/OCR por página, o serviço estruturado e a validação comercial. A extração estruturada recebe o número e a origem da página; o backend valida evidências na página correspondente antes da validação comercial. O serviço devolve o documento, avisos, relatório de validação e estado final; erros das etapas são propagados sem incluir os bytes do arquivo no resultado.
+
+Os testes comuns substituem o OCR por mocks determinísticos e não precisam do Tesseract nem do Ollama. Para executar também o teste local opcional com Tesseract, confirme que o comando e os dados de idioma estão disponíveis, então rode:
+
+```bash
+DOCUFLOW_RUN_TESSERACT_TESTS=1 .venv/bin/python -m unittest discover -s backend/tests/integration -p 'test_ocr_tesseract_optional.py' -v
+```
+
+Sem `DOCUFLOW_RUN_TESSERACT_TESTS=1` ou sem o executável configurado, esse teste informa `skipped`.

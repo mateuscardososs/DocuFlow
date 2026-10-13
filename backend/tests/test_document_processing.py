@@ -1,12 +1,13 @@
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from backend.app.schemas import PurchaseOrder
 from backend.app.services.document_processing import (
     DocumentProcessingConfig,
     DocumentProcessingService,
 )
+from backend.app.services.document_text_extractor import DocumentTextExtractor
 from backend.app.services.pdf_text_extractor import PdfExtractionError
 from backend.app.services.structured_extraction import (
     ExtractionProviderError,
@@ -22,9 +23,11 @@ class StubProvider:
         self.response = response
         self.error = error
         self.calls = 0
+        self.prompts = []
 
     def extract(self, *, prompt, output_schema):
         self.calls += 1
+        self.prompts.append(prompt)
         if self.error:
             raise self.error
         return self.response
@@ -41,10 +44,16 @@ def reference_payload():
 class DocumentProcessingTests(unittest.TestCase):
     def build_service(self, response=None, error=None, max_pdf_bytes=None):
         provider = StubProvider(response=response, error=error)
+        ocr = Mock()
+        ocr.recognize.return_value = ""
+        processing_config = DocumentProcessingConfig(
+            pdf_max_bytes=max_pdf_bytes if max_pdf_bytes is not None else 10 * 1024 * 1024,
+        )
         service = DocumentProcessingService(
             provider,
-            config=DocumentProcessingConfig(
-                pdf_max_bytes=max_pdf_bytes if max_pdf_bytes is not None else 10 * 1024 * 1024,
+            config=processing_config,
+            text_extractor=DocumentTextExtractor(
+                ocr_engine=ocr, max_bytes=processing_config.pdf_max_bytes
             ),
         )
         return service, provider
@@ -90,6 +99,23 @@ class DocumentProcessingTests(unittest.TestCase):
         self.assertEqual(result.status, "ready_for_review")
         self.assertEqual(len(result.pdf_warnings), 1)
         self.assertIn("página 2", result.pdf_warnings[0])
+
+    def test_ocr_page_source_reaches_structured_extraction_and_evidence_validation(self):
+        provider = StubProvider(response=json.dumps(reference_payload(), ensure_ascii=False))
+        ocr = Mock()
+        ocr.recognize.return_value = REFERENCE_TEXT
+        service = DocumentProcessingService(
+            provider,
+            text_extractor=DocumentTextExtractor(ocr_engine=ocr),
+        )
+
+        result, pages = service.process_with_pages(
+            make_pdf([None]), PurchaseOrder.model_validate(purchase_order())
+        )
+
+        self.assertEqual(pages[0].source, "ocr")
+        self.assertIn("Página 1 (origem: ocr)", provider.prompts[0])
+        self.assertEqual(result.status, "ready_for_review")
 
     def test_invalid_pdf_error_is_preserved(self):
         service, provider = self.build_service(response=json.dumps(reference_payload()))
