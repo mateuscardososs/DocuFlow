@@ -11,6 +11,7 @@ from backend.app.schemas import PurchaseOrder
 
 class PurchaseOrderRepository(Protocol):
     def get_by_reference(self, reference: str, workspace_id: int) -> PurchaseOrder | None: ...
+    def get_by_id(self, order_id: int, workspace_id: int) -> PurchaseOrder | None: ...
     def get_entity_id_by_reference(self, reference: str, workspace_id: int) -> int | None: ...
 
 
@@ -27,6 +28,42 @@ class SqlAlchemyPurchaseOrderRepository:
             )
             .where(
                 PurchaseOrderEntity.reference == reference,
+                PurchaseOrderEntity.workspace_id == workspace_id,
+            )
+        )
+        with self._session_factory() as session:
+            order = session.scalar(statement)
+            if order is None:
+                return None
+            return PurchaseOrder.model_validate(
+                {
+                    "reference": order.reference,
+                    "supplier_name": order.supplier.name,
+                    "supplier_identifier": order.supplier.identifier,
+                    "currency": order.currency,
+                    "items": [
+                        {
+                            "code": item.code,
+                            "description": item.description,
+                            "quantity": format(item.quantity, "f"),
+                            "unit_price": format(item.unit_price, "f"),
+                            "line_total": format(item.line_total, "f"),
+                        }
+                        for item in order.items
+                    ],
+                    "total": format(order.total, "f"),
+                }
+            )
+
+    def get_by_id(self, order_id: int, workspace_id: int) -> PurchaseOrder | None:
+        statement = (
+            select(PurchaseOrderEntity)
+            .options(
+                joinedload(PurchaseOrderEntity.supplier),
+                selectinload(PurchaseOrderEntity.items),
+            )
+            .where(
+                PurchaseOrderEntity.id == order_id,
                 PurchaseOrderEntity.workspace_id == workspace_id,
             )
         )

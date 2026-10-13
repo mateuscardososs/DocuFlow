@@ -14,16 +14,24 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.models.identity import Workspace
-from backend.app.models.document import DocumentEntity
+from backend.app.models.identity import User, Workspace, WorkspaceMembership
+from backend.app.models.document import (
+    DocumentApprovalEntity,
+    DocumentAuditEventEntity,
+    DocumentEntity,
+    DocumentReviewRevisionEntity,
+)
+from backend.app.auth import hash_password
 from backend.app.schemas import ReferenceDocument
 from backend.app.models.purchase_order import PurchaseOrderEntity, PurchaseOrderItem, Supplier
 from backend.app.repositories.purchase_orders import SqlAlchemyPurchaseOrderRepository
 from backend.app.repositories.documents import SqlAlchemyDocumentRepository
 from backend.app.seed_reference_order import seed_reference_order
 from backend.app.services.document_processing import DocumentProcessingResult
+from backend.app.services.document_review import DocumentReviewService
 from backend.app.validation import ValidationReport
 from backend.tests.test_document_processing import reference_payload
+from backend.tests.test_pdf_text_extractor import REFERENCE_TEXT
 
 
 def _test_database_url() -> str:
@@ -119,13 +127,17 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         )
         with self.engine.connect() as connection:
             revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
-        self.assertEqual(revision, "20261014_0003")
+        self.assertEqual(revision, "20261015_0004")
         self.assertIn(
             "uq_purchase_orders_workspace_reference",
             {item["name"] for item in inspector.get_unique_constraints("purchase_orders")},
         )
         self.assertTrue(inspector.get_foreign_keys("purchase_orders"))
         self.assertIn("documents", inspector.get_table_names())
+        self.assertTrue(
+            {"document_review_revisions", "document_approvals", "document_audit_events"}
+            .issubset(set(inspector.get_table_names()))
+        )
         self.assertIn(
             "uq_documents_workspace_sha256",
             {item["name"] for item in inspector.get_unique_constraints("documents")},
@@ -517,6 +529,104 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         self.assertIsNotNone(order)
         self.assertEqual(order.supplier_identifier, "FORN-0001")
         self.assertEqual([item.code for item in order.items], ["ARR-001", "PAR-002"])
+
+    def test_review_revisions_approval_and_audit_persist_in_postgresql(self):
+        seed_reference_order(self.session_factory)
+        with Session(self.engine) as session:
+            order_id = session.scalar(
+                select(PurchaseOrderEntity.id).where(
+                    PurchaseOrderEntity.workspace_id == self.demo_workspace_id,
+                    PurchaseOrderEntity.reference == "PC-2026-0001",
+                )
+            )
+            user = User(
+                email=f"reviewer-{uuid4().hex}@example.test",
+                password_hash=hash_password("integration-test-password"),
+            )
+            session.add(user)
+            session.flush()
+            session.add(
+                WorkspaceMembership(
+                    user_id=user.id,
+                    workspace_id=self.demo_workspace_id,
+                    role="operator",
+                )
+            )
+            user_id = user.id
+            session.commit()
+
+        repository = SqlAlchemyDocumentRepository(self.session_factory)
+        document, duplicate = repository.create(
+            workspace_id=self.demo_workspace_id,
+            purchase_order_id=order_id,
+            original_filename="review.pdf",
+            size_bytes=123,
+            content_type="application/pdf",
+            sha256=uuid4().hex + uuid4().hex,
+            storage_key=f"{self.demo_workspace_id}/{uuid4().hex}.pdf",
+        )
+        self.assertFalse(duplicate)
+        extracted = ReferenceDocument.model_validate(reference_payload())
+        repository.save_result(
+            document_id=document.id,
+            workspace_id=self.demo_workspace_id,
+            result=DocumentProcessingResult(
+                document=extracted,
+                pdf_warnings=[],
+                validation=ValidationReport(status="ready_for_review", findings=[]),
+                status="ready_for_review",
+            ),
+            page_texts=[{"number": 1, "text": REFERENCE_TEXT}],
+        )
+
+        revised_payload = reference_payload()
+        revised_payload["document_number"]["value"] = "DOC-CORRIGIDO"
+        review = DocumentReviewService(repository, self.repository)
+        corrected = review.correct(
+            document_id=document.id,
+            workspace_id=self.demo_workspace_id,
+            expected_version=1,
+            reviewer_user_id=user_id,
+            reviewed_document=ReferenceDocument.model_validate(revised_payload),
+            justification="Correção validada na base PostgreSQL.",
+        )
+        self.assertEqual(corrected.review_version, 2)
+        approved = review.approve(
+            document_id=document.id,
+            workspace_id=self.demo_workspace_id,
+            expected_version=2,
+            approver_user_id=user_id,
+        )
+        self.assertEqual(approved.review_status, "approved")
+
+        with Session(self.engine) as session:
+            stored = session.get(DocumentEntity, document.id)
+            self.assertEqual(stored.extracted_document["document_number"]["value"], "DOC-2026-1042")
+            self.assertEqual(stored.reviewed_document["document_number"]["value"], "DOC-CORRIGIDO")
+            self.assertEqual(
+                session.scalar(
+                    select(DocumentApprovalEntity.reviewed_version).where(
+                        DocumentApprovalEntity.document_id == document.id
+                    )
+                ),
+                2,
+            )
+            self.assertEqual(
+                session.scalar(
+                    select(DocumentReviewRevisionEntity.version).where(
+                        DocumentReviewRevisionEntity.document_id == document.id
+                    )
+                ),
+                2,
+            )
+            event_types = set(
+                session.scalars(
+                    select(DocumentAuditEventEntity.event_type).where(
+                        DocumentAuditEventEntity.document_id == document.id
+                    )
+                ).all()
+            )
+        self.assertEqual(event_types, {"review", "correction", "approval"})
 
 
 if __name__ == "__main__":

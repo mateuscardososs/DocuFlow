@@ -1,12 +1,17 @@
 """Persistência SQLAlchemy de documentos, sempre limitada ao workspace."""
 
-from typing import Protocol
+from typing import Any, Protocol
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
-from backend.app.models.document import DocumentEntity
+from backend.app.models.document import (
+    DocumentApprovalEntity,
+    DocumentAuditEventEntity,
+    DocumentEntity,
+    DocumentReviewRevisionEntity,
+)
 from backend.app.services.document_processing import DocumentProcessingResult
 
 
@@ -38,6 +43,40 @@ class DocumentRepository(Protocol):
     def mark_failed(
         self, *, document_id: int, workspace_id: int, safe_message: str
     ) -> None: ...
+    def save_correction(
+        self,
+        *,
+        document_id: int,
+        workspace_id: int,
+        expected_version: int,
+        reviewer_user_id: int,
+        reviewed_document: dict[str, Any],
+        validation_result: dict[str, Any],
+        justification: str,
+    ) -> DocumentEntity: ...
+    def save_approval(
+        self,
+        *,
+        document_id: int,
+        workspace_id: int,
+        expected_version: int,
+        approver_user_id: int,
+        approved_document: dict[str, Any],
+        validation_result: dict[str, Any],
+    ) -> DocumentEntity: ...
+    def save_rejection(
+        self,
+        *,
+        document_id: int,
+        workspace_id: int,
+        expected_version: int,
+        approver_user_id: int,
+        justification: str,
+    ) -> DocumentEntity: ...
+    def current_approval(
+        self, document_id: int, workspace_id: int, version: int
+    ) -> DocumentApprovalEntity | None: ...
+    def audit_events(self, document_id: int, workspace_id: int) -> list[DocumentAuditEventEntity]: ...
 
 
 class SqlAlchemyDocumentRepository:
@@ -151,4 +190,218 @@ class SqlAlchemyDocumentRepository:
                 raise RuntimeError("O documento não foi encontrado para registrar a falha.")
             document.processing_status = "failed"
             document.processing_error = safe_message
+
+    def save_correction(
+        self,
+        *,
+        document_id: int,
+        workspace_id: int,
+        expected_version: int,
+        reviewer_user_id: int,
+        reviewed_document: dict[str, Any],
+        validation_result: dict[str, Any],
+        justification: str,
+    ) -> DocumentEntity:
+        from backend.app.services.document_review import (
+            DocumentReviewNotFound,
+            DocumentNotReviewable,
+        )
+
+        with self._session_factory.begin() as session:
+            document = session.scalar(
+                select(DocumentEntity)
+                .where(
+                    DocumentEntity.id == document_id,
+                    DocumentEntity.workspace_id == workspace_id,
+                )
+                .with_for_update()
+            )
+            if document is None:
+                raise DocumentReviewNotFound
+            _require_current_version(document, expected_version)
+            if document.processing_status != "succeeded" or document.extracted_document is None:
+                raise DocumentNotReviewable
+
+            next_version = document.review_version + 1
+            document.review_version = next_version
+            document.reviewed_document = reviewed_document
+            document.validation_result = validation_result
+            document.final_status = validation_result["status"]
+            document.review_status = "pending"
+            session.add(
+                DocumentReviewRevisionEntity(
+                    document_id=document_id,
+                    workspace_id=workspace_id,
+                    version=next_version,
+                    reviewed_document=reviewed_document,
+                    validation_result=validation_result,
+                    reviewer_user_id=reviewer_user_id,
+                    justification=justification,
+                )
+            )
+            for event_type in ("review", "correction"):
+                session.add(
+                    DocumentAuditEventEntity(
+                        document_id=document_id,
+                        workspace_id=workspace_id,
+                        event_type=event_type,
+                        version=next_version,
+                        actor_user_id=reviewer_user_id,
+                        justification=justification,
+                        details={"validation_status": validation_result["status"]},
+                    )
+                )
+            session.flush()
+
+        record = self.get_by_id(document_id, workspace_id)
+        if record is None:
+            raise DocumentReviewNotFound
+        return record
+
+    def save_approval(
+        self,
+        *,
+        document_id: int,
+        workspace_id: int,
+        expected_version: int,
+        approver_user_id: int,
+        approved_document: dict[str, Any],
+        validation_result: dict[str, Any],
+    ) -> DocumentEntity:
+        from backend.app.services.document_review import (
+            DocumentReviewNotFound,
+            DocumentNotReviewable,
+            ReviewActionConflict,
+        )
+
+        with self._session_factory.begin() as session:
+            document = session.scalar(
+                select(DocumentEntity)
+                .where(
+                    DocumentEntity.id == document_id,
+                    DocumentEntity.workspace_id == workspace_id,
+                )
+                .with_for_update()
+            )
+            if document is None:
+                raise DocumentReviewNotFound
+            _require_current_version(document, expected_version)
+            if document.processing_status != "succeeded" or document.extracted_document is None:
+                raise DocumentNotReviewable
+            if document.review_status != "pending":
+                raise ReviewActionConflict
+
+            document.validation_result = validation_result
+            document.final_status = validation_result["status"]
+            document.review_status = "approved"
+            session.add(
+                DocumentApprovalEntity(
+                    document_id=document_id,
+                    workspace_id=workspace_id,
+                    reviewed_version=document.review_version,
+                    approved_document=approved_document,
+                    validation_result=validation_result,
+                    approver_user_id=approver_user_id,
+                )
+            )
+            session.add(
+                DocumentAuditEventEntity(
+                    document_id=document_id,
+                    workspace_id=workspace_id,
+                    event_type="approval",
+                    version=document.review_version,
+                    actor_user_id=approver_user_id,
+                    details={"validation_status": validation_result["status"]},
+                )
+            )
+            session.flush()
+
+        record = self.get_by_id(document_id, workspace_id)
+        if record is None:
+            raise DocumentReviewNotFound
+        return record
+
+    def save_rejection(
+        self,
+        *,
+        document_id: int,
+        workspace_id: int,
+        expected_version: int,
+        approver_user_id: int,
+        justification: str,
+    ) -> DocumentEntity:
+        from backend.app.services.document_review import (
+            DocumentReviewNotFound,
+            DocumentNotReviewable,
+            ReviewActionConflict,
+        )
+
+        with self._session_factory.begin() as session:
+            document = session.scalar(
+                select(DocumentEntity)
+                .where(
+                    DocumentEntity.id == document_id,
+                    DocumentEntity.workspace_id == workspace_id,
+                )
+                .with_for_update()
+            )
+            if document is None:
+                raise DocumentReviewNotFound
+            _require_current_version(document, expected_version)
+            if document.processing_status != "succeeded" or document.extracted_document is None:
+                raise DocumentNotReviewable
+            if document.review_status != "pending":
+                raise ReviewActionConflict
+
+            document.review_status = "rejected"
+            session.add(
+                DocumentAuditEventEntity(
+                    document_id=document_id,
+                    workspace_id=workspace_id,
+                    event_type="rejection",
+                    version=document.review_version,
+                    actor_user_id=approver_user_id,
+                    justification=justification,
+                )
+            )
+            session.flush()
+
+        record = self.get_by_id(document_id, workspace_id)
+        if record is None:
+            raise DocumentReviewNotFound
+        return record
+
+    def current_approval(
+        self, document_id: int, workspace_id: int, version: int
+    ) -> DocumentApprovalEntity | None:
+        with self._session_factory() as session:
+            return session.scalar(
+                select(DocumentApprovalEntity).where(
+                    DocumentApprovalEntity.document_id == document_id,
+                    DocumentApprovalEntity.workspace_id == workspace_id,
+                    DocumentApprovalEntity.reviewed_version == version,
+                )
+            )
+
+    def audit_events(
+        self, document_id: int, workspace_id: int
+    ) -> list[DocumentAuditEventEntity]:
+        with self._session_factory() as session:
+            return list(
+                session.scalars(
+                    select(DocumentAuditEventEntity)
+                    .where(
+                        DocumentAuditEventEntity.document_id == document_id,
+                        DocumentAuditEventEntity.workspace_id == workspace_id,
+                    )
+                    .order_by(DocumentAuditEventEntity.created_at, DocumentAuditEventEntity.id)
+                ).all()
+            )
+
+
+def _require_current_version(document: DocumentEntity, expected_version: int) -> None:
+    from backend.app.services.document_review import ReviewVersionConflict
+
+    if document.review_version != expected_version:
+        raise ReviewVersionConflict
 

@@ -9,7 +9,17 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.auth import AuthSettings, AuthenticatedUser, AuthenticationService
-from backend.app.document_schemas import DocumentAnalysisResponse, DocumentDetail, DocumentSummary
+from backend.app.document_schemas import (
+    DocumentAnalysisResponse,
+    DocumentApprovalView,
+    DocumentAuditEventView,
+    DocumentDetail,
+    DocumentReviewResponse,
+    DocumentSummary,
+    ReviewCorrectionRequest,
+    ReviewDecisionRequest,
+    ReviewRejectionRequest,
+)
 from backend.app.db import create_database
 from backend.app.integrations.ollama_extraction import OllamaConfig, OllamaExtractionProvider
 from backend.app.models.document import DocumentEntity
@@ -19,6 +29,14 @@ from backend.app.repositories.purchase_orders import (
 )
 from backend.app.repositories.documents import DocumentRepository, SqlAlchemyDocumentRepository
 from backend.app.services.document_lifecycle import DocumentAttemptError, DocumentLifecycleService
+from backend.app.services.document_review import (
+    ApprovalBlocked,
+    DocumentNotReviewable,
+    DocumentReviewNotFound,
+    DocumentReviewService,
+    ReviewActionConflict,
+    ReviewVersionConflict,
+)
 from backend.app.services.document_storage import DocumentFileStorage
 from backend.app.services.document_processing import (
     DocumentProcessingConfig,
@@ -76,6 +94,7 @@ def create_app(
     document_lifecycle = DocumentLifecycleService(
         document_repository, document_storage, document_processing_service
     )
+    document_review = DocumentReviewService(document_repository, order_repository)
     oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
     app = FastAPI(title="DocuFlow API", version="0.1.0")
@@ -84,6 +103,7 @@ def create_app(
     app.state.document_repository = document_repository
     app.state.document_storage = document_storage
     app.state.document_lifecycle = document_lifecycle
+    app.state.document_review = document_review
     app.state.authentication = authentication
     app.state.max_upload_bytes = max_upload_bytes
     app.state.database_engine = database.engine if database is not None else None
@@ -216,11 +236,11 @@ def create_app(
         _require_workspace_member(authentication, user, workspace_id)
         try:
             record = document_repository.get_by_id(document_id, workspace_id)
+            if record is None:
+                raise HTTPException(status_code=404, detail="Documento não encontrado.")
+            return _document_detail(record, document_repository)
         except SQLAlchemyError:
             raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
-        if record is None:
-            raise HTTPException(status_code=404, detail="Documento não encontrado.")
-        return _document_detail(record)
 
     @app.get("/documents/{document_id}/download")
     def download_document(
@@ -242,6 +262,107 @@ def create_app(
         if not path.is_file():
             raise HTTPException(status_code=404, detail="Arquivo não encontrado.")
         return FileResponse(path, filename=record.original_filename, media_type="application/pdf")
+
+    @app.patch("/documents/{document_id}/review", response_model=DocumentReviewResponse)
+    def correct_document(
+        document_id: int,
+        request: ReviewCorrectionRequest,
+        user: AuthenticatedUser = Depends(current_user),
+        workspace_id: int = Header(alias="X-Workspace-ID"),
+    ) -> DocumentReviewResponse:
+        _require_document_role(authentication, user, workspace_id, "operator")
+        try:
+            record = document_review.correct(
+                document_id=document_id,
+                workspace_id=workspace_id,
+                expected_version=request.expected_version,
+                reviewer_user_id=user.id,
+                reviewed_document=request.reviewed_document,
+                justification=request.justification,
+            )
+            return _review_response(record, document_repository)
+        except (
+            DocumentReviewNotFound,
+            DocumentNotReviewable,
+            ReviewVersionConflict,
+            ReviewActionConflict,
+            ApprovalBlocked,
+        ) as error:
+            raise _review_http_error(error) from None
+        except SQLAlchemyError:
+            raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
+
+    @app.post("/documents/{document_id}/approve", response_model=DocumentReviewResponse)
+    def approve_document(
+        document_id: int,
+        request: ReviewDecisionRequest,
+        user: AuthenticatedUser = Depends(current_user),
+        workspace_id: int = Header(alias="X-Workspace-ID"),
+    ) -> DocumentReviewResponse:
+        _require_document_role(authentication, user, workspace_id, "approver")
+        try:
+            record = document_review.approve(
+                document_id=document_id,
+                workspace_id=workspace_id,
+                expected_version=request.expected_version,
+                approver_user_id=user.id,
+            )
+            return _review_response(record, document_repository)
+        except (
+            DocumentReviewNotFound,
+            DocumentNotReviewable,
+            ReviewVersionConflict,
+            ReviewActionConflict,
+            ApprovalBlocked,
+        ) as error:
+            raise _review_http_error(error) from None
+        except SQLAlchemyError:
+            raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
+
+    @app.post("/documents/{document_id}/reject", response_model=DocumentReviewResponse)
+    def reject_document(
+        document_id: int,
+        request: ReviewRejectionRequest,
+        user: AuthenticatedUser = Depends(current_user),
+        workspace_id: int = Header(alias="X-Workspace-ID"),
+    ) -> DocumentReviewResponse:
+        _require_document_role(authentication, user, workspace_id, "approver")
+        try:
+            record = document_review.reject(
+                document_id=document_id,
+                workspace_id=workspace_id,
+                expected_version=request.expected_version,
+                approver_user_id=user.id,
+                justification=request.justification,
+            )
+            return _review_response(record, document_repository)
+        except (
+            DocumentReviewNotFound,
+            DocumentNotReviewable,
+            ReviewVersionConflict,
+            ReviewActionConflict,
+            ApprovalBlocked,
+        ) as error:
+            raise _review_http_error(error) from None
+        except SQLAlchemyError:
+            raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
+
+    @app.get("/documents/{document_id}/audit", response_model=list[DocumentAuditEventView])
+    def get_document_audit(
+        document_id: int,
+        user: AuthenticatedUser = Depends(current_user),
+        workspace_id: int = Header(alias="X-Workspace-ID"),
+    ) -> list[DocumentAuditEventView]:
+        _require_workspace_member(authentication, user, workspace_id)
+        try:
+            if document_repository.get_by_id(document_id, workspace_id) is None:
+                raise HTTPException(status_code=404, detail="Documento não encontrado.")
+            return [
+                DocumentAuditEventView.model_validate(event, from_attributes=True)
+                for event in document_repository.audit_events(document_id, workspace_id)
+            ]
+        except SQLAlchemyError:
+            raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
 
     return app
 
@@ -276,6 +397,7 @@ def _analysis_response(
         duplicate=duplicate,
         processing_status=record.processing_status,
         review_status=record.review_status,
+        review_version=record.review_version,
         processing_error=record.processing_error,
         document=(
             ReferenceDocument.model_validate(record.extracted_document)
@@ -304,12 +426,30 @@ def _document_summary(record: DocumentEntity) -> DocumentSummary:
         uploaded_at=record.uploaded_at,
         processing_status=record.processing_status,
         review_status=record.review_status,
+        review_version=record.review_version,
         processing_error=record.processing_error,
         final_status=record.final_status,
     )
 
 
-def _document_detail(record: DocumentEntity) -> DocumentDetail:
+def _document_detail(record: DocumentEntity, repository: DocumentRepository) -> DocumentDetail:
+    approval = None
+    if record.review_status == "approved":
+        stored_approval = repository.current_approval(
+            record.id, record.workspace_id, record.review_version
+        )
+        if stored_approval is not None:
+            approval = DocumentApprovalView(
+                approved_version=stored_approval.reviewed_version,
+                approver_user_id=stored_approval.approver_user_id,
+                approved_at=stored_approval.approved_at,
+                approved_document=ReferenceDocument.model_validate(
+                    stored_approval.approved_document
+                ),
+                validation_result=ValidationReport.model_validate(
+                    stored_approval.validation_result
+                ),
+            )
     return DocumentDetail(
         **_document_summary(record).model_dump(),
         page_texts=record.page_texts,
@@ -318,12 +458,18 @@ def _document_detail(record: DocumentEntity) -> DocumentDetail:
             if record.extracted_document is not None
             else None
         ),
+        reviewed_document=(
+            ReferenceDocument.model_validate(record.reviewed_document)
+            if record.reviewed_document is not None
+            else None
+        ),
         pdf_warnings=record.pdf_warnings,
         validation_result=(
             ValidationReport.model_validate(record.validation_result)
             if record.validation_result is not None
             else None
         ),
+        approval=approval,
     )
 
 
@@ -345,3 +491,63 @@ def _order_id(repository: PurchaseOrderRepository, reference: str, workspace_id:
     if order_id is None:
         raise HTTPException(status_code=404, detail="Pedido de compra não encontrado.")
     return order_id
+
+
+def _require_document_role(
+    authentication: AuthenticationService,
+    user: AuthenticatedUser,
+    workspace_id: int,
+    role: str,
+) -> None:
+    roles = authentication.roles_for(user.id, workspace_id)
+    if not roles:
+        raise HTTPException(status_code=403, detail="Usuário não pertence a este workspace.")
+    if role not in roles:
+        raise HTTPException(status_code=403, detail=f"O papel {role} é necessário para esta ação.")
+
+
+def _review_response(
+    record: DocumentEntity, repository: DocumentRepository
+) -> DocumentReviewResponse:
+    document_data = (
+        record.reviewed_document
+        if record.reviewed_document is not None
+        else record.extracted_document
+    )
+    if document_data is None or record.validation_result is None:
+        raise HTTPException(status_code=409, detail="Documento ainda não está disponível para revisão.")
+    approval = None
+    if record.review_status == "approved":
+        stored_approval = repository.current_approval(
+            record.id, record.workspace_id, record.review_version
+        )
+        if stored_approval is not None:
+            approval = DocumentApprovalView(
+                approved_version=stored_approval.reviewed_version,
+                approver_user_id=stored_approval.approver_user_id,
+                approved_at=stored_approval.approved_at,
+                approved_document=ReferenceDocument.model_validate(
+                    stored_approval.approved_document
+                ),
+                validation_result=ValidationReport.model_validate(
+                    stored_approval.validation_result
+                ),
+            )
+    return DocumentReviewResponse(
+        document_id=record.id,
+        review_status=record.review_status,
+        review_version=record.review_version,
+        reviewed_document=ReferenceDocument.model_validate(document_data),
+        validation=ValidationReport.model_validate(record.validation_result),
+        approval=approval,
+    )
+
+
+def _review_http_error(error: Exception) -> HTTPException:
+    if isinstance(error, DocumentReviewNotFound):
+        return HTTPException(status_code=404, detail=str(error) or "Documento não encontrado.")
+    if isinstance(error, (ReviewVersionConflict, ReviewActionConflict, DocumentNotReviewable)):
+        return HTTPException(status_code=409, detail=str(error) or "A revisão não pode ser atualizada.")
+    if isinstance(error, ApprovalBlocked):
+        return HTTPException(status_code=422, detail=str(error))
+    return HTTPException(status_code=409, detail="A ação de revisão não pode ser concluída.")
