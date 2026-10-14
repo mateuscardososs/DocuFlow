@@ -227,9 +227,11 @@ test('conclui o ciclo principal no navegador com PostgreSQL, Redis/RQ e ERP demo
     await expect(page.getByRole('heading', { name: `nota-${runId}.pdf` })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Achados comerciais' })).toBeVisible()
     await expect(page.getByText('Nenhuma divergência comercial encontrada.')).toBeVisible()
-    await expect(page.getByText('Texto nativo', { exact: true })).toBeVisible()
+    const pageText = page.getByLabel('Texto extraído da página 1')
+    await expect(pageText.getByText('native', { exact: true })).toBeVisible()
     await expect(page.getByText(fixture.order_reference, { exact: true }).first()).toBeVisible()
-    await expect(page.getByText('“Total do documento: R$ 1.250,00”')).toBeVisible()
+    const totalEvidence = page.getByRole('button', { name: 'Ver evidência de Total do documento na página 1' })
+    await expect(totalEvidence).toHaveText('“Total do documento: R$ 1.250,00”')
 
     await page.getByRole('button', { name: 'Editar dados' }).click()
     await page.getByRole('textbox', { name: 'Item 1 · Descrição valor' }).fill('Arruela zincada M8 conferida')
