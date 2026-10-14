@@ -58,6 +58,41 @@ Inicie a aplicação localmente com:
 
 `POST /documents/analyze` valida tipo e tamanho, grava o registro e o arquivo privado e só então enfileira o job. A resposta inicial é HTTP 202 com `document_id` e `state: queued`. `review_status` continua independente e começa como `pending`; nenhum documento é aprovado automaticamente. Reenviar bytes com o mesmo SHA-256 no mesmo workspace retorna HTTP 200 com `duplicate: true` e o ID já registrado. O mesmo arquivo pode ser registrado em outro workspace.
 
+## Interface web
+
+O frontend fica em `frontend/` e usa React, TypeScript e Vite. Requer Node.js 20.19 ou superior (ou 22.12 ou superior), conforme o requisito atual do Vite ([guia oficial](https://vite.dev/guide/)); o projeto foi instalado e validado com Node 24.15.0. Os testes da interface usam Vitest, que compartilha a configuração Vite ([guia oficial do Vitest](https://vitest.dev/guide/)).
+
+Configure a URL da API no ambiente Vite. O exemplo não contém segredo:
+
+```bash
+cp frontend/.env.example frontend/.env.local
+```
+
+Para desenvolvimento, mantenha PostgreSQL, Redis, migrações, seed e workers conforme as seções abaixo. Inicie a API em um terminal e a interface em outro:
+
+```bash
+.venv/bin/uvicorn backend.app.main:app --reload
+```
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+A interface abre em `http://localhost:5173`. A API permite CORS somente para `DOCUFLOW_FRONTEND_ORIGIN`, que por padrão é `http://localhost:5173`; configure a origem exata se alterar host ou porta. Origens vazias ou `*` são recusadas. Os cabeçalhos permitidos são `Authorization`, `Content-Type`, `X-Workspace-ID` e `Accept`; não há credenciais em cookies. O token Bearer fica apenas na memória da sessão React e é removido ao sair ou fechar/recarregar a página.
+
+Login e papéis vêm de `GET /auth/me`; seleção de workspace sempre envia `X-Workspace-ID`. A interface usa os contratos atuais de lista/detalhe, revisão, auditoria, download e envio ERP. A lista exibe fornecedor e referência do pedido no resumo para permitir filtros antes que a extração termine; esses campos são consultados pelo backend no repositório do mesmo workspace. A revisão envia o documento completo com `expected_version`; conflito HTTP 409 pede recarga antes de uma nova ação. Aprovação e envio ao ERP são ações humanas explícitas.
+
+Execute os testes, a verificação de tipos e o build da interface:
+
+```bash
+cd frontend
+npm test
+npm run typecheck
+npm run build
+```
+
 O fluxo de processamento tem os estados `queued → processing → ready_for_review` ou `failed`. Redis/RQ recebe apenas o ID do documento como argumento; o worker carrega o pedido no workspace registrado e o arquivo pela chave interna. Se Redis estiver indisponível depois que o upload foi persistido, a API retorna HTTP 503, mantém o arquivo e o documento como `failed` com mensagem segura e permite nova tentativa. `POST /documents/{id}/reprocess` exige `operator`, associação ao workspace e estado `failed`; documentos prontos ou aprovados não são reprocessados. O worker confere o estado, workspace, ID RQ ativo e aprovação dentro do PostgreSQL antes de iniciar e antes de gravar o resultado. Isso impede que jobs repetidos ou antigos substituam resultados prontos, revisões ou snapshots aprovados; não oferece execução exatamente uma vez.
 
 RQ aplica timeout por job e número máximo de tentativas configurável. Erros terminais deixam `processing_status: failed` e uma mensagem segura; o PDF e o histórico são mantidos. Se o worker cair de forma abrupta e o documento ficar em `processing`, o comando de recuperação busca execuções mais antigas que `DOCUFLOW_STALE_AFTER_SECONDS`, invalida o job antigo no banco e cria outro job. Se Redis ou o worker estiver indisponível, uploads podem permanecer em `queued` até que o serviço volte; falha de enqueue é registrada como `failed`, pronta para chamada explícita de reprocessamento.

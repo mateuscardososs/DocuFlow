@@ -115,6 +115,19 @@ class PurchaseOrderRepositoryTests(unittest.TestCase):
         self.assertIsNone(self.repository.get_by_reference("PC-UNICO", other_workspace_id))
         self.assertIsNone(self.repository.get_by_reference("PC-NAO-EXISTE", self.workspace_id))
 
+    def test_display_fields_are_loaded_in_one_workspace_scoped_lookup(self):
+        seed_reference_order(self.session_factory)
+        order_id = self.repository.get_entity_id_by_reference("PC-2026-0001", self.workspace_id)
+
+        result = self.repository.get_display_fields_by_ids(
+            self.workspace_id, {order_id, order_id + 999}
+        )
+
+        self.assertEqual(
+            result,
+            {order_id: {"reference": "PC-2026-0001", "supplier_name": "Metalúrgica Horizonte Ltda."}},
+        )
+
     def test_reference_order_seed_is_explicit_and_idempotent(self):
         self.assertTrue(seed_reference_order(self.session_factory))
         self.assertFalse(seed_reference_order(self.session_factory))

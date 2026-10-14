@@ -1,0 +1,31 @@
+:root {
+  font-family: 'Avenir Next', Avenir, system-ui, sans-serif;
+  color: #1c2a31;
+  background: #f4f6f5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --ink: #1c2a31;
+  --muted: #68777b;
+  --line: #e1e8e5;
+  --paper: #fff;
+  --canvas: #f4f6f5;
+  --forest: #124b43;
+  --forest-deep: #0b3934;
+  --mint: #dff1e9;
+  --teal: #1c7969;
+  --coral: #b9473d;
+  --amber: #94671b;
+  --shadow: 0 7px 24px rgba(33, 54, 51, .045);
+  font-optical-sizing: auto;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { opacity: .58; cursor: not-allowed; }
+a { color: inherit; }
+::selection { background: #c5e8da; color: #103e37; }
+:focus-visible { outline: 3px solid #5aa99a; outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

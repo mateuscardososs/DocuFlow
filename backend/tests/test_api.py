@@ -121,6 +121,8 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(body["state"], "queued")
         detail = client.get(f"/documents/{body['document_id']}").json()
         self.assertEqual(detail["extracted_document"]["document_number"]["value"], "DOC-2026-1042")
+        self.assertEqual(detail["purchase_order_reference"], "PC-2026-0001")
+        self.assertEqual(detail["supplier_name"], "Metalúrgica Horizonte Ltda.")
         self.assertEqual(detail["validation_result"]["status"], "ready_for_review")
         self.assertEqual(detail["pdf_warnings"], [])
         self.assertNotIn("pdf_bytes", body)
@@ -130,6 +132,30 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(passed_pdf, pdf)
         self.assertIsInstance(passed_order, PurchaseOrder)
         self.assertEqual(passed_order.reference, "PC-2026-0001")
+
+    def test_frontend_cors_allows_configured_local_origin_only(self):
+        client, _, _ = create_client(self)
+
+        allowed = client.options(
+            "/auth/me",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "authorization,x-workspace-id",
+            },
+        )
+        blocked = client.options(
+            "/auth/me",
+            headers={
+                "Origin": "https://example.invalid",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "authorization,x-workspace-id",
+            },
+        )
+
+        self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(allowed.headers.get("access-control-allow-origin"), "http://localhost:5173")
+        self.assertNotIn("access-control-allow-origin", blocked.headers)
 
     def test_extraction_provider_can_be_injected_without_ollama(self):
         from backend.app.api.app import create_app

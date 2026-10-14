@@ -5,6 +5,7 @@ import os
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
@@ -130,6 +131,16 @@ def create_app(
     oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
     app = FastAPI(title="DocuFlow API", version="0.1.0")
+    frontend_origin = os.getenv("DOCUFLOW_FRONTEND_ORIGIN", "http://localhost:5173").strip()
+    if not frontend_origin or frontend_origin == "*":
+        raise RuntimeError("DOCUFLOW_FRONTEND_ORIGIN precisa ser uma origem explícita.")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[frontend_origin],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Workspace-ID", "Accept"],
+    )
     app.state.document_processing_service = document_processing_service
     app.state.order_repository = order_repository
     app.state.document_repository = document_repository
@@ -293,9 +304,15 @@ def create_app(
             records = document_repository.list_for_workspace(
                 workspace_id, limit=limit, offset=offset
             )
+            order_display_fields = order_repository.get_display_fields_by_ids(
+                workspace_id, {record.purchase_order_id for record in records}
+            )
         except SQLAlchemyError:
             raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
-        return [_document_summary(record) for record in records]
+        return [
+            _document_summary(record, order_display_fields.get(record.purchase_order_id))
+            for record in records
+        ]
 
     @app.get("/documents/{document_id}", response_model=DocumentDetail)
     def get_document(
@@ -308,7 +325,13 @@ def create_app(
             record = document_repository.get_by_id(document_id, workspace_id)
             if record is None:
                 raise HTTPException(status_code=404, detail="Documento não encontrado.")
-            return _document_detail(record, document_repository)
+            order = order_repository.get_by_id(record.purchase_order_id, workspace_id)
+            order_display_fields = (
+                {"reference": order.reference, "supplier_name": order.supplier_name}
+                if order is not None
+                else None
+            )
+            return _document_detail(record, document_repository, order_display_fields)
         except SQLAlchemyError:
             raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
 
@@ -539,11 +562,15 @@ def _analysis_response(
     )
 
 
-def _document_summary(record: DocumentEntity) -> DocumentSummary:
+def _document_summary(
+    record: DocumentEntity, order_display_fields: dict[str, str] | None
+) -> DocumentSummary:
     return DocumentSummary(
         id=record.id,
         workspace_id=record.workspace_id,
         purchase_order_id=record.purchase_order_id,
+        purchase_order_reference=(order_display_fields or {}).get("reference"),
+        supplier_name=(order_display_fields or {}).get("supplier_name"),
         original_filename=record.original_filename,
         size_bytes=record.size_bytes,
         content_type=record.content_type,
@@ -557,7 +584,11 @@ def _document_summary(record: DocumentEntity) -> DocumentSummary:
     )
 
 
-def _document_detail(record: DocumentEntity, repository: DocumentRepository) -> DocumentDetail:
+def _document_detail(
+    record: DocumentEntity,
+    repository: DocumentRepository,
+    order_display_fields: dict[str, str] | None,
+) -> DocumentDetail:
     approval = None
     if record.review_status == "approved":
         stored_approval = repository.current_approval(
@@ -576,7 +607,7 @@ def _document_detail(record: DocumentEntity, repository: DocumentRepository) -> 
                 ),
             )
     return DocumentDetail(
-        **_document_summary(record).model_dump(),
+        **_document_summary(record, order_display_fields).model_dump(),
         page_texts=record.page_texts,
         extracted_document=(
             ReferenceDocument.model_validate(record.extracted_document)
