@@ -283,3 +283,37 @@ DOCUFLOW_RUN_TESSERACT_TESTS=1 .venv/bin/python -m unittest discover -s backend/
 ```
 
 Sem `DOCUFLOW_RUN_TESSERACT_TESTS=1` ou sem o executável configurado, esse teste informa `skipped`.
+
+### Teste ponta a ponta no navegador
+
+O Playwright executa o fluxo principal em Chromium real: login, escolha do workspace, upload, processamento RQ, leitura de evidências e achados, revisão versionada, aprovação humana e envio ao ERP de demonstração. O cenário usa um provedor estruturado determinístico e `DemoERPClient`; não chama Ollama, ERP externo nem requer Tesseract, pois o PDF gerado tem texto nativo.
+
+Instale as dependências do frontend e o navegador suportado pelo Playwright:
+
+```bash
+cd frontend
+npm install
+npx playwright install chromium
+```
+
+Configure `.env` com `DATABASE_URL` apontando para a base de desenvolvimento, `TEST_DATABASE_URL` apontando para PostgreSQL local `docuflow_test`, e `TEST_REDIS_URL` apontando para Redis local em uma base lógica diferente da fila normal (o exemplo usa `/15`, enquanto a fila normal usa `/0`). Inicie somente os serviços compartilhados necessários; o teste não os apaga nem os encerra:
+
+```bash
+cd ..
+docker compose up -d postgres redis
+```
+
+Execute o cenário de forma explícita:
+
+```bash
+set -a
+. ./.env
+set +a
+export DOCUFLOW_RUN_BROWSER_E2E=1
+cd frontend
+npm run test:e2e
+```
+
+O comando inicia API, Vite e um worker de teste como processos filhos, em portas locais escolhidas para a execução, e os encerra ao terminar. O worker escuta duas filas com nomes aleatórios exclusivos; o teste remove apenas jobs e chaves dessas filas. A migração roda com `upgrade head` em `docuflow_test`; usuário, workspaces, fornecedor, pedido, documento, revisão e aprovação usam identificadores únicos e são removidos ao final. Arquivos ficam em diretório temporário do cenário. A rotina recusa outro nome de banco, host remoto e Redis que compartilhe a mesma base lógica da fila normal.
+
+O teste é ignorado com motivo explícito se `TEST_DATABASE_URL`, `TEST_REDIS_URL`, `DOCUFLOW_RUN_BROWSER_E2E=1`, `.venv` ou Chromium estiverem ausentes; também informa quando PostgreSQL ou Redis configurado está indisponível. A suíte Vitest continua restrita a `frontend/src` e não inicia navegador ou serviços. Playwright usa Node.js 22, 24 ou 26 segundo os requisitos oficiais ([instalação do Playwright](https://playwright.dev/docs/intro)); este projeto foi validado com Node 24.
