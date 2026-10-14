@@ -21,9 +21,7 @@ def create_worker_service() -> tuple[DocumentWorkerService, object]:
     documents = SqlAlchemyDocumentRepository(database.session_factory)
     orders = SqlAlchemyPurchaseOrderRepository(database.session_factory)
     storage = DocumentFileStorage(os.getenv("DOCUMENT_STORAGE_DIR", "var/documents"))
-    provider = OllamaExtractionProvider(
-        OllamaConfig(model=os.getenv("DOCUFLOW_OLLAMA_MODEL", "gemma4"))
-    )
+    provider = OllamaExtractionProvider(OllamaConfig.from_environment())
     processing = DocumentProcessingService(
         provider,
         config=DocumentProcessingConfig(ocr=OcrConfig.from_environment()),

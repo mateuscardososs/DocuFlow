@@ -1,7 +1,7 @@
 import { test, expect, chromium } from '@playwright/test'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -12,6 +12,7 @@ const python = join(repoRoot, '.venv/bin/python')
 const testDbUrl = process.env.TEST_DATABASE_URL
 const testRedisUrl = process.env.TEST_REDIS_URL
 const enabled = process.env.DOCUFLOW_RUN_BROWSER_E2E === '1'
+const dockerWorkers = process.env.DOCUFLOW_BROWSER_E2E_DOCKER === '1'
 const serviceConfigMissing = !enabled || !testDbUrl || !testRedisUrl
 const skipReason = 'Ignorado: configure TEST_DATABASE_URL, TEST_REDIS_URL e DOCUFLOW_RUN_BROWSER_E2E=1.'
 
@@ -53,6 +54,19 @@ async function waitFor(url: string, process: ChildProcess, label: string): Promi
   throw new Error(`${label} não iniciou dentro do limite de 30 segundos.`)
 }
 
+async function waitForUrl(url: string, label: string): Promise<void> {
+  const deadline = Date.now() + 60_000
+  while (Date.now() < deadline) {
+    try {
+      if ((await fetch(url)).ok) return
+    } catch {
+      // O container ainda está iniciando.
+    }
+    await delay(400)
+  }
+  throw new Error(`${label} não iniciou dentro do limite de 60 segundos.`)
+}
+
 function start(command: string, args: string[], env: NodeJS.ProcessEnv, cwd = repoRoot): ChildProcess {
   return spawn(command, args, { cwd, env, stdio: 'ignore' })
 }
@@ -75,6 +89,12 @@ test('conclui o ciclo principal no navegador com PostgreSQL, Redis/RQ e ERP demo
   if (check.status === 2) test.skip(true, check.stdout.trim() || 'Ignorado: PostgreSQL ou Redis de teste indisponível.')
   if (check.status !== 0) throw new Error(check.stderr || check.stdout || 'A configuração de teste não passou nas verificações de segurança.')
 
+  const networkName = process.env.DOCUFLOW_E2E_DOCKER_NETWORK ?? 'docuflow_default'
+  if (dockerWorkers) {
+    const network = spawnSync('docker', ['network', 'inspect', networkName], { encoding: 'utf8' })
+    if (network.status !== 0) test.skip(true, `Ignorado: rede Docker ${networkName} ausente; inicie PostgreSQL e Redis do Compose.`)
+  }
+
   const runId = randomUUID().replaceAll('-', '').slice(0, 16)
   const email = `browser-${runId}@example.test`
   const password = randomBytes(32).toString('base64url')
@@ -84,9 +104,21 @@ test('conclui o ciclo principal no navegador com PostgreSQL, Redis/RQ e ERP demo
   const frontendUrl = `http://127.0.0.1:${frontendPort}`
   const runDirectory = mkdtempSync(join(tmpdir(), `docuflow-browser-${runId}-`))
   const documentStorage = join(runDirectory, 'documents')
+  if (dockerWorkers) chmodSync(runDirectory, 0o755)
+  if (dockerWorkers) {
+    mkdirSync(documentStorage, { mode: 0o777 })
+    chmodSync(documentStorage, 0o777)
+  }
   const documentQueue = `docuflow_browser_${runId}_documents`
   const erpQueue = `docuflow_browser_${runId}_erp`
   const jwtSecret = randomBytes(48).toString('base64url')
+  const composeProject = `docuflow-browser-${runId}`
+  const internalDbUrl = new URL(testDbUrl)
+  internalDbUrl.hostname = 'postgres'
+  internalDbUrl.port = '5432'
+  const internalRedisUrl = new URL(testRedisUrl)
+  internalRedisUrl.hostname = 'redis'
+  internalRedisUrl.port = '6379'
   const testEnv: NodeJS.ProcessEnv = {
     ...process.env,
     DATABASE_URL: testDbUrl,
@@ -111,12 +143,22 @@ test('conclui o ciclo principal no navegador com PostgreSQL, Redis/RQ e ERP demo
     DOCUFLOW_TEST_ORDER_REFERENCE: `BROWSER-${runId.toUpperCase()}`,
     DOCUFLOW_TEST_API_URL: apiUrl,
     DOCUFLOW_TEST_PDF_PATH: join(runDirectory, 'invoice.pdf'),
+    DOCUFLOW_TEST_CONTAINER_DATABASE_URL: internalDbUrl.toString(),
+    DOCUFLOW_TEST_CONTAINER_REDIS_URL: internalRedisUrl.toString(),
+    DOCUFLOW_CONTAINER_DATABASE_URL: internalDbUrl.toString(),
+    DOCUFLOW_CONTAINER_REDIS_URL: internalRedisUrl.toString(),
+    DOCUFLOW_E2E_DOCKER_NETWORK: networkName,
+    DOCUFLOW_TEST_DOCUMENT_STORAGE_DIR: documentStorage,
+    API_PORT: String(apiPort),
+    FRONTEND_PORT: String(frontendPort),
+    VITE_API_BASE_URL: apiUrl,
   }
 
   let apiProcess: ChildProcess | undefined
   let webProcess: ChildProcess | undefined
   let workerProcess: ChildProcess | undefined
   let fixture: { workspace_name: string; order_reference: string; email: string; pdf_base64: string } | undefined
+  let composeStarted = false
   try {
     const setup = execFileSync(python, ['-m', 'backend.tests.integration.browser_e2e_support', 'setup'], {
       cwd: repoRoot,
@@ -126,15 +168,28 @@ test('conclui o ciclo principal no navegador com PostgreSQL, Redis/RQ e ERP demo
     })
     fixture = JSON.parse(setup)
 
-    apiProcess = start(python, ['-m', 'uvicorn', 'backend.tests.integration.browser_api:app', '--host', '127.0.0.1', '--port', String(apiPort)], testEnv)
-    workerProcess = start(python, ['-m', 'backend.tests.integration.browser_worker', 'work'], testEnv)
-    webProcess = start(join(repoRoot, 'frontend/node_modules/.bin/vite'), ['--host', '127.0.0.1', '--port', String(frontendPort), '--strictPort'], {
-      ...testEnv,
-      VITE_API_BASE_URL: apiUrl,
-    }, join(repoRoot, 'frontend'))
+    if (dockerWorkers) {
+      const composeArgs = [
+        'compose', '-p', composeProject, '-f', 'compose.yaml', '-f', 'compose.browser-e2e.yaml',
+        'up', '-d', '--build', '--no-deps',
+        'e2e-api', 'e2e-document-worker', 'e2e-erp-worker', 'e2e-frontend',
+      ]
+      composeStarted = true
+      const started = spawnSync('docker', composeArgs, { cwd: repoRoot, env: testEnv, encoding: 'utf8' })
+      if (started.status !== 0) throw new Error(`A stack isolada de teste não iniciou: ${started.stderr || started.stdout}`)
+      await waitForUrl(`${apiUrl}/health`, 'API em container')
+      await waitForUrl(frontendUrl, 'Frontend em container')
+    } else {
+      apiProcess = start(python, ['-m', 'uvicorn', 'backend.tests.integration.browser_api:app', '--host', '127.0.0.1', '--port', String(apiPort)], testEnv)
+      workerProcess = start(python, ['-m', 'backend.tests.integration.browser_worker', 'work'], testEnv)
+      webProcess = start(join(repoRoot, 'frontend/node_modules/.bin/vite'), ['--host', '127.0.0.1', '--port', String(frontendPort), '--strictPort'], {
+        ...testEnv,
+        VITE_API_BASE_URL: apiUrl,
+      }, join(repoRoot, 'frontend'))
 
-    await waitFor(`${apiUrl}/health`, apiProcess, 'API de teste')
-    await waitFor(frontendUrl, webProcess, 'frontend Vite')
+      await waitFor(`${apiUrl}/health`, apiProcess, 'API de teste')
+      await waitFor(frontendUrl, webProcess, 'frontend Vite')
+    }
 
     await page.goto(frontendUrl)
     await page.getByLabel('E-mail').fill(fixture.email)
@@ -197,6 +252,17 @@ test('conclui o ciclo principal no navegador com PostgreSQL, Redis/RQ e ERP demo
     await stop(webProcess)
     await stop(apiProcess)
     await stop(workerProcess)
+    if (composeStarted) {
+      spawnSync('docker', [
+        'compose', '-p', composeProject, '-f', 'compose.yaml', '-f', 'compose.browser-e2e.yaml',
+        'exec', '-T', 'e2e-api', 'python', '-c',
+        'from pathlib import Path; import shutil; p=Path("/var/lib/docuflow/documents"); [shutil.rmtree(x) if x.is_dir() else x.unlink() for x in p.iterdir()]',
+      ], { cwd: repoRoot, env: testEnv, stdio: 'ignore' })
+      spawnSync('docker', [
+        'compose', '-p', composeProject, '-f', 'compose.yaml', '-f', 'compose.browser-e2e.yaml',
+        'rm', '-sf', 'e2e-api', 'e2e-document-worker', 'e2e-erp-worker', 'e2e-frontend',
+      ], { cwd: repoRoot, env: testEnv, stdio: 'ignore' })
+    }
     spawnSync(python, ['-m', 'backend.tests.integration.browser_e2e_support', 'cleanup'], {
       cwd: repoRoot,
       env: testEnv,

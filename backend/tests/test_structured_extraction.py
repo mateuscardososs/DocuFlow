@@ -33,6 +33,22 @@ class StubProvider:
 
 
 class StructuredExtractionTests(unittest.TestCase):
+    def test_ollama_config_reads_model_url_and_timeout_from_environment(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "DOCUFLOW_OLLAMA_MODEL": "gemma-local",
+                "DOCUFLOW_OLLAMA_BASE_URL": "http://ollama:11434",
+                "DOCUFLOW_OLLAMA_TIMEOUT_SECONDS": "17.5",
+            },
+            clear=False,
+        ):
+            config = OllamaConfig.from_environment()
+
+        self.assertEqual(config.model, "gemma-local")
+        self.assertEqual(config.base_url, "http://ollama:11434")
+        self.assertEqual(config.timeout_seconds, 17.5)
+
     def service(self, response=None, error=None, max_attempts=2):
         provider = StubProvider(response=response, error=error)
         service = StructuredExtractionService(

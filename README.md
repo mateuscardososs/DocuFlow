@@ -38,7 +38,7 @@ As dependências do backend são declaradas em `requirements.txt` e verificadas 
 
 ## Dependências do backend
 
-`pypdf` lê texto nativo de PDFs. Para páginas sem texto utilizável, `pypdfium2` renderiza a página localmente e o executável Tesseract faz OCR; Pillow valida e normaliza PNG/JPEG. O OCR não usa serviços externos e sua saída ainda passa pelas mesmas verificações de evidência e validação comercial. `pypdfium2` 5.14.0 e Pillow 12.3.0 foram instalados no Python 3.14.4 do projeto; os metadados oficiais declaram suporte a Python 3.14 ([pypdfium2 no PyPI](https://pypi.org/project/pypdfium2/), [Pillow no PyPI](https://pypi.org/project/pillow/)). O Tesseract é uma dependência de sistema separada: instale o mecanismo e os dados dos idiomas ([instalação oficial](https://tesseract-ocr.github.io/tessdoc/Installation.html), [dados de idioma](https://tesseract-ocr.github.io/tessdoc/Data-Files.html)). O worker RQ roda no host; o Compose atual não constrói uma imagem de aplicação/worker. No macOS instale o mecanismo e todos os dados de idioma com `brew install tesseract tesseract-lang`; em Debian/Ubuntu instale `tesseract-ocr tesseract-ocr-por tesseract-ocr-eng`. A integração usa a CLI documentada pelo Tesseract ([uso da linha de comando](https://tesseract-ocr.github.io/tessdoc/Command-Line-Usage.html)). As demais bibliotecas servem à API, autenticação, PostgreSQL e fila; RQ 2.12.0 e redis-py 8.1.0 também foram instalados e verificados em Python 3.14 ([documentação RQ](https://python-rq.org/docs/), [documentação redis-py](https://redis.readthedocs.io/en/stable/)). Para instalar as dependências Python e rodar os testes:
+`pypdf` lê texto nativo de PDFs. Para páginas sem texto utilizável, `pypdfium2` renderiza a página localmente e o executável Tesseract faz OCR; Pillow valida e normaliza PNG/JPEG. O OCR não usa serviços externos e sua saída ainda passa pelas mesmas verificações de evidência e validação comercial. `pypdfium2` 5.14.0 e Pillow 12.3.0 foram instalados no Python 3.14.4 do projeto; os metadados oficiais declaram suporte a Python 3.14 ([pypdfium2 no PyPI](https://pypi.org/project/pypdfium2/), [Pillow no PyPI](https://pypi.org/project/pillow/)). A imagem do worker documental instala Tesseract e os dados `por` e `eng`; para executar o worker no host, instale o mecanismo e os idiomas ([instalação oficial](https://tesseract-ocr.github.io/tessdoc/Installation.html), [dados de idioma](https://tesseract-ocr.github.io/tessdoc/Data-Files.html)). No macOS use `brew install tesseract tesseract-lang`; em Debian/Ubuntu, `sudo apt install tesseract-ocr tesseract-ocr-por tesseract-ocr-eng`. A integração usa a CLI documentada pelo Tesseract ([uso da linha de comando](https://tesseract-ocr.github.io/tessdoc/Command-Line-Usage.html)). As demais bibliotecas servem à API, autenticação, PostgreSQL e fila; RQ 2.12.0 e redis-py 8.1.0 também foram instalados e verificados em Python 3.14 ([documentação RQ](https://python-rq.org/docs/), [documentação redis-py](https://redis.readthedocs.io/en/stable/)). Para instalar as dependências Python e rodar os testes:
 
 ```bash
 python3 -m venv .venv
@@ -134,7 +134,7 @@ O limite de upload é 10 MiB por padrão e o limite de PDF é cinco páginas. `U
 
 O worker lê as variáveis `DOCUFLOW_OCR_LANGUAGE` (`por+eng`), `DOCUFLOW_OCR_DPI` (`300`), `DOCUFLOW_OCR_TIMEOUT_SECONDS` (`30`), `DOCUFLOW_NATIVE_TEXT_MIN_CHARS` (`1`, contando caracteres após normalizar espaços) e `DOCUFLOW_TESSERACT_CMD` (`tesseract`). A CLI e os dados de idioma precisam estar instalados no host/container que executa o worker. Para renderização, o DPI deve ser pelo menos 72 e imagens maiores que 40 megapixels são recusadas para limitar memória.
 
-A rota de upload consulta `PurchaseOrderRepository`; em execução normal, `SqlAlchemyPurchaseOrderRepository` usa as tabelas PostgreSQL. Após salvar o registro e o arquivo privado, a API enfileira apenas o ID do documento e responde HTTP 202. O worker carrega o pedido, o documento e o arquivo do PostgreSQL/armazenamento e então chama `DocumentProcessingService` com o `ExtractionProvider`. Esses componentes continuam substituíveis nos testes. O worker padrão usa `OllamaExtractionProvider`; configure o modelo com `DOCUFLOW_OLLAMA_MODEL` (padrão `gemma4`). Os testes substituem o provedor por um stub e não chamam Ollama.
+A rota de upload consulta `PurchaseOrderRepository`; em execução normal, `SqlAlchemyPurchaseOrderRepository` usa as tabelas PostgreSQL. Após salvar o registro e o arquivo privado, a API enfileira apenas o ID do documento e responde HTTP 202. O worker carrega o pedido, o documento e o arquivo do PostgreSQL/armazenamento e então chama `DocumentProcessingService` com o `ExtractionProvider`. Esses componentes continuam substituíveis nos testes. O worker padrão usa `OllamaExtractionProvider`; configure endereço, modelo e timeout por `DOCUFLOW_OLLAMA_BASE_URL`, `DOCUFLOW_OLLAMA_MODEL` (padrão `gemma4`) e `DOCUFLOW_OLLAMA_TIMEOUT_SECONDS`. Os testes substituem o provedor por um stub e não chamam Ollama.
 
 O armazenamento padrão fica em `var/documents`, fora de qualquer diretório público, e pode ser alterado por `DOCUMENT_STORAGE_DIR`. O `.gitignore` exclui esse diretório. Os nomes de arquivo são UUIDs internos por workspace; o nome original fica apenas como metadado. O PostgreSQL guarda metadados, SHA-256, status, contador de tentativas, ID ativo do job, texto de cada página, extração, avisos e validação em colunas relacionais/JSON. O PDF permanece no armazenamento privado e não é salvo como blob no banco.
 
@@ -157,6 +157,52 @@ set -a
 . ./.env
 set +a
 ```
+
+## Execução da stack com Docker Compose
+
+O Compose também constrói a API, o worker documental, o worker da fila `erp-submissions` e o frontend. PostgreSQL e Redis continuam nos serviços e volumes nomeados existentes; o volume novo `docuflow_local_private_documents` é compartilhado somente pela API e pelo worker documental. O frontend recebe apenas os arquivos estáticos da build e não monta nem serve PDFs.
+
+Prepare o `.env` antes de iniciar. Gere `JWT_SECRET_KEY` com `openssl rand -hex 32` e uma senha URL-safe para um banco novo com `openssl rand -hex 24`; use a senha em `POSTGRES_PASSWORD` e na URL `DOCUFLOW_CONTAINER_DATABASE_URL`. Se a senha tiver caracteres especiais, aplique percent-encoding na URL. Em um volume PostgreSQL existente, mantenha a senha que já inicializou o banco: mudar apenas a variável não altera a senha gravada no PostgreSQL. `.env.example` mostra os endereços internos `postgres` e `redis` usados pelos containers; `DATABASE_URL` e `REDIS_URL` sem o prefixo `DOCUFLOW_CONTAINER_` continuam apontando para o host quando comandos locais forem usados. Segredos reais ficam somente no `.env`, que está ignorado pelo Git.
+
+Valide, construa e inicie a stack sem remover nem recriar os volumes atuais:
+
+```bash
+docker compose config --quiet
+docker compose build api document-worker erp-worker frontend
+docker compose up -d --wait postgres redis
+docker compose run --rm --no-deps api alembic -c backend/alembic.ini upgrade head
+docker compose run --rm --no-deps api python -m backend.app.seed_reference_order
+docker compose up -d --wait api document-worker erp-worker frontend
+docker compose ps
+```
+
+As migrações são sempre executadas explicitamente e nunca durante a inicialização da API. Se o banco já tiver estado desconhecido, confira-o antes do comando de migração. O primeiro usuário também é criado explicitamente. Esse comando pede a senha em prompt oculto e não recebe senha por argumento:
+
+```bash
+docker compose run --rm api python -m backend.app.admin create-user \
+  --email operador@example.test --workspace demo \
+  --role operator --role approver
+```
+
+Abra o frontend em `http://localhost:5173`; a API responde em `http://localhost:8000`. As duas portas são publicadas somente em loopback e a API permite apenas a origem configurada em `DOCUFLOW_FRONTEND_ORIGIN` (padrão `http://localhost:5173`). O Dockerfile Python usa Python 3.14.4, instala as versões exatas de `requirements.lock` e roda como UID não-root; o frontend usa `package-lock.json` e Nginx não privilegiado. Os containers de aplicação usam filesystem somente leitura, `no-new-privileges` e removem capabilities. O PostgreSQL e o Redis permanecem em seus volumes atuais; para parar sem apagar dados, use `docker compose stop` (nunca use `down -v`).
+
+O worker documental recebe `DOCUFLOW_OCR_LANGUAGE=por+eng`, DPI, timeout e comando já configuráveis. Confira os idiomas instalados no container com `docker compose exec document-worker tesseract --list-langs`. O adaptador ERP continua sendo `DemoERPClient`; nenhum serviço externo é contatado.
+
+O build não instala nem baixa Ollama ou modelos. Para usar Ollama, configure `DOCUFLOW_OLLAMA_BASE_URL` (no exemplo `http://host.docker.internal:11434`), `DOCUFLOW_OLLAMA_MODEL` e `DOCUFLOW_OLLAMA_TIMEOUT_SECONDS` no `.env`, inicie Ollama no host e baixe o modelo manualmente com `ollama pull <modelo>`. O worker documental precisa conseguir alcançar a URL configurada; firewall, processo Ollama e modelo são configuração do host. Sem Ollama, os testes usam provedor determinístico.
+
+O teste Playwright pode manter API e os dois workers em containers enquanto usa uma fila Redis e a base PostgreSQL dedicadas. Ele não inicia nem encerra PostgreSQL/Redis, e usa uma rede externa já criada pelo Compose. Para habilitá-lo, instale Chromium como na seção abaixo, carregue `.env`, garanta que `docuflow_test` e Redis `/15` estão disponíveis e execute:
+
+```bash
+set -a
+. ./.env
+set +a
+export DOCUFLOW_RUN_BROWSER_E2E=1
+export DOCUFLOW_BROWSER_E2E_DOCKER=1
+cd frontend
+npm run test:e2e
+```
+
+Esse modo cria um projeto Compose e portas exclusivos, usa um diretório temporário privado, provedor estruturado determinístico e ERP simulado, e remove apenas os containers, arquivos, registros identificados e chaves de fila criados pelo próprio cenário. Ele é ignorado se Docker, rede Compose, PostgreSQL/Redis de teste ou Chromium não estiverem disponíveis. O caminho padrão sem `DOCUFLOW_BROWSER_E2E_DOCKER=1` continua executando os processos locais.
 
 As URLs usam Psycopg 3 e apontam para bases diferentes. Aplique as migrações e cadastre o pedido fictício de forma explícita:
 
@@ -299,7 +345,7 @@ npx playwright install chromium
 Configure `.env` com `DATABASE_URL` apontando para a base de desenvolvimento, `TEST_DATABASE_URL` apontando para PostgreSQL local `docuflow_test`, e `TEST_REDIS_URL` apontando para Redis local em uma base lógica diferente da fila normal (o exemplo usa `/15`, enquanto a fila normal usa `/0`). Inicie somente os serviços compartilhados necessários; o teste não os apaga nem os encerra:
 
 ```bash
-cd ..
+cd "$(git rev-parse --show-toplevel)"
 docker compose up -d postgres redis
 ```
 
@@ -317,3 +363,80 @@ npm run test:e2e
 O comando inicia API, Vite e um worker de teste como processos filhos, em portas locais escolhidas para a execução, e os encerra ao terminar. O worker escuta duas filas com nomes aleatórios exclusivos; o teste remove apenas jobs e chaves dessas filas. A migração roda com `upgrade head` em `docuflow_test`; usuário, workspaces, fornecedor, pedido, documento, revisão e aprovação usam identificadores únicos e são removidos ao final. Arquivos ficam em diretório temporário do cenário. A rotina recusa outro nome de banco, host remoto e Redis que compartilhe a mesma base lógica da fila normal.
 
 O teste é ignorado com motivo explícito se `TEST_DATABASE_URL`, `TEST_REDIS_URL`, `DOCUFLOW_RUN_BROWSER_E2E=1`, `.venv` ou Chromium estiverem ausentes; também informa quando PostgreSQL ou Redis configurado está indisponível. A suíte Vitest continua restrita a `frontend/src` e não inicia navegador ou serviços. Playwright usa Node.js 22, 24 ou 26 segundo os requisitos oficiais ([instalação do Playwright](https://playwright.dev/docs/intro)); este projeto foi validado com Node 24.
+
+## CI
+
+O GitHub Actions está configurado em `.github/workflows/ci.yml` para pull requests e pushes em `main`. O estado de cada execução aparece na aba **Actions** do repositório. Os jobs são: testes unitários Python, verificações e build do frontend, integração com PostgreSQL/Redis e OCR real, fluxo Playwright em Chromium com containers, e validação/build do Compose. As integrações usam serviços, filas e volumes específicos da execução; os workflows não carregam `.env`.
+
+Para reproduzir as verificações localmente, instale as dependências travadas e execute as mesmas suítes:
+
+```bash
+python3.14 -m venv .venv
+.venv/bin/python -m pip install -r requirements.lock
+.venv/bin/python -m unittest discover -s backend/tests -v
+
+cd frontend
+npm ci
+npm run test
+npm run typecheck
+npm run lint
+npm run build
+```
+
+Os testes PostgreSQL/Redis e o Playwright precisam de serviços dedicados. O exemplo abaixo cria um projeto Compose e volumes próprios em portas alternativas; os valores de senha e JWT são fictícios para uso local. Não carregue o `.env` normal nesse ambiente:
+
+```bash
+cd ..
+export COMPOSE_PROJECT_NAME="docuflow-ci-local-$(date +%s)"
+export DOCUFLOW_CI_POSTGRES_VOLUME="${COMPOSE_PROJECT_NAME}-postgres"
+export DOCUFLOW_CI_REDIS_VOLUME="${COMPOSE_PROJECT_NAME}-redis"
+export DOCUFLOW_CI_DOCUMENTS_VOLUME="${COMPOSE_PROJECT_NAME}-documents"
+export POSTGRES_DB=docuflow POSTGRES_USER=docuflow POSTGRES_PASSWORD=ci_local_only
+export POSTGRES_PORT=15432 REDIS_PORT=16379
+export DATABASE_URL=postgresql+psycopg://docuflow:ci_local_only@127.0.0.1:15432/docuflow
+export TEST_DATABASE_URL=postgresql+psycopg://docuflow:ci_local_only@127.0.0.1:15432/docuflow_test
+export REDIS_URL=redis://127.0.0.1:16379/0 ERP_REDIS_URL=redis://127.0.0.1:16379/0
+export TEST_REDIS_URL=redis://127.0.0.1:16379/15
+export DOCUFLOW_CONTAINER_DATABASE_URL=postgresql+psycopg://docuflow:ci_local_only@postgres:5432/docuflow
+export DOCUFLOW_CONTAINER_REDIS_URL=redis://redis:6379/0
+export JWT_SECRET_KEY=ci_local_only_not_a_real_secret
+export DOCUFLOW_FRONTEND_ORIGIN=http://localhost:5173
+
+docker compose --env-file /dev/null -p "$COMPOSE_PROJECT_NAME" \
+  -f compose.yaml -f .github/compose.ci.yaml up -d --wait postgres redis
+.venv/bin/python -m unittest discover -s backend/tests/integration -v
+```
+
+Para executar também o OCR real, instale Tesseract com os idiomas `por` e `eng` no host e rode:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+export DOCUFLOW_OCR_LANGUAGE=por+eng
+export DOCUFLOW_RUN_TESSERACT_TESTS=1
+.venv/bin/python -m unittest \
+  backend.tests.integration.test_rq_real_integration.RealRQPostgreSQLIntegrationTests.test_real_rq_ocr_upload_uses_tesseract_and_validates_page_evidence \
+  -v
+.venv/bin/python -m unittest discover -s backend/tests/integration -p test_ocr_tesseract_optional.py -v
+```
+
+Para o E2E em Chromium com API e workers containerizados, instale as dependências de frontend e o navegador, depois use a rede do projeto isolado:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+cd frontend
+npm ci
+npx playwright install chromium
+export DOCUFLOW_E2E_DOCKER_NETWORK="${COMPOSE_PROJECT_NAME}_default"
+export DOCUFLOW_RUN_BROWSER_E2E=1 DOCUFLOW_BROWSER_E2E_DOCKER=1
+npm run test:e2e
+```
+
+Para validar o Compose e construir as imagens, execute:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+docker compose --env-file /dev/null -p "$COMPOSE_PROJECT_NAME" -f compose.yaml -f .github/compose.ci.yaml config --quiet
+docker compose --env-file /dev/null -p "$COMPOSE_PROJECT_NAME" -f compose.yaml -f .github/compose.ci.yaml build api document-worker erp-worker frontend
+```
+
+Ao terminar a reprodução local, `docker compose --env-file /dev/null -p "$COMPOSE_PROJECT_NAME" -f compose.yaml -f .github/compose.ci.yaml stop postgres redis` para os serviços mantendo os volumes; não use comandos que removam volumes.

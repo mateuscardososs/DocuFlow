@@ -1,6 +1,7 @@
 """Adaptador HTTP para a API local de chat do Ollama."""
 
 import json
+import os
 import socket
 from dataclasses import dataclass
 from typing import Any
@@ -24,6 +25,14 @@ class OllamaConfig:
             raise ValueError("Informe o nome do modelo Ollama.")
         if self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds precisa ser positivo.")
+
+    @classmethod
+    def from_environment(cls) -> "OllamaConfig":
+        return cls(
+            model=os.getenv("DOCUFLOW_OLLAMA_MODEL", "gemma4"),
+            base_url=os.getenv("DOCUFLOW_OLLAMA_BASE_URL", "http://localhost:11434"),
+            timeout_seconds=float(os.getenv("DOCUFLOW_OLLAMA_TIMEOUT_SECONDS", "60")),
+        )
 
 
 class OllamaExtractionProvider:

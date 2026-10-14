@@ -1,0 +1,9 @@
+# Isola os volumes quando os serviços PostgreSQL/Redis são usados em CI ou
+# numa reprodução local. O nome do projeto e os três nomes são definidos pelo job.
+volumes:
+  docuflow_local_postgres_data:
+    name: ${DOCUFLOW_CI_POSTGRES_VOLUME:?Set a unique PostgreSQL volume name}
+  docuflow_local_redis_data:
+    name: ${DOCUFLOW_CI_REDIS_VOLUME:?Set a unique Redis volume name}
+  docuflow_local_private_documents:
+    name: ${DOCUFLOW_CI_DOCUMENTS_VOLUME:?Set a unique document volume name}

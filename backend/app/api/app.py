@@ -92,7 +92,7 @@ def create_app(
         provider = (
             extraction_provider
             if extraction_provider is not None
-            else OllamaExtractionProvider(OllamaConfig(model=os.getenv("DOCUFLOW_OLLAMA_MODEL", "gemma4")))
+            else OllamaExtractionProvider(OllamaConfig.from_environment())
         )
         document_processing_service = DocumentProcessingService(
             provider,

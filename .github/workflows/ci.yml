@@ -1,0 +1,198 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docuflow-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-unit:
+    name: Backend unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: 3.14.4
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - name: Install locked Python dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements.lock
+      - name: Run backend unit suite
+        run: .venv/bin/python -m unittest discover -s backend/tests -v
+
+  frontend:
+    name: Frontend tests, checks and build
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.15.0
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked frontend dependencies
+        run: npm ci
+      - name: Run Vitest
+        run: npm run test
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Build frontend
+        run: npm run build
+
+  integration-ocr:
+    name: PostgreSQL, Redis/RQ and real OCR
+    runs-on: ubuntu-24.04
+    env:
+      COMPOSE_PROJECT_NAME: docuflow-integration-${{ github.run_id }}-${{ github.run_attempt }}
+      POSTGRES_DB: docuflow
+      POSTGRES_USER: docuflow
+      POSTGRES_PASSWORD: docuflow_ci_${{ github.run_id }}_${{ github.run_attempt }}
+      POSTGRES_PORT: "5432"
+      REDIS_PORT: "6379"
+      DATABASE_URL: postgresql+psycopg://docuflow:docuflow_ci_${{ github.run_id }}_${{ github.run_attempt }}@127.0.0.1:5432/docuflow
+      TEST_DATABASE_URL: postgresql+psycopg://docuflow:docuflow_ci_${{ github.run_id }}_${{ github.run_attempt }}@127.0.0.1:5432/docuflow_test
+      REDIS_URL: redis://127.0.0.1:6379/0
+      ERP_REDIS_URL: redis://127.0.0.1:6379/0
+      TEST_REDIS_URL: redis://127.0.0.1:6379/15
+      DOCUFLOW_CONTAINER_DATABASE_URL: postgresql+psycopg://docuflow:docuflow_ci_${{ github.run_id }}_${{ github.run_attempt }}@postgres:5432/docuflow
+      DOCUFLOW_CONTAINER_REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: docuflow_ci_only_${{ github.run_id }}_${{ github.run_attempt }}_not_a_secret
+      DOCUFLOW_CI_POSTGRES_VOLUME: docuflow-integration-${{ github.run_id }}-${{ github.run_attempt }}-postgres
+      DOCUFLOW_CI_REDIS_VOLUME: docuflow-integration-${{ github.run_id }}-${{ github.run_attempt }}-redis
+      DOCUFLOW_CI_DOCUMENTS_VOLUME: docuflow-integration-${{ github.run_id }}-${{ github.run_attempt }}-documents
+      DOCUFLOW_OCR_LANGUAGE: por+eng
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: 3.14.4
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - name: Install locked Python dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements.lock
+      - name: Install Tesseract and Portuguese/English data
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends tesseract-ocr tesseract-ocr-por tesseract-ocr-eng
+          tesseract --list-langs
+      - name: Start isolated PostgreSQL and Redis
+        run: >-
+          docker compose --env-file /dev/null
+          -f compose.yaml -f .github/compose.ci.yaml
+          up -d --wait postgres redis
+      - name: Run PostgreSQL migrations, integration tests and real RQ workers
+        run: .venv/bin/python -m unittest discover -s backend/tests/integration -v
+      - name: Run real Tesseract OCR through the RQ worker
+        env:
+          DOCUFLOW_RUN_TESSERACT_TESTS: "1"
+        run: >-
+          .venv/bin/python -m unittest
+          backend.tests.integration.test_rq_real_integration.RealRQPostgreSQLIntegrationTests.test_real_rq_ocr_upload_uses_tesseract_and_validates_page_evidence
+          -v
+      - name: Run standalone Tesseract smoke test
+        env:
+          DOCUFLOW_RUN_TESSERACT_TESTS: "1"
+        run: >-
+          .venv/bin/python -m unittest
+          discover -s backend/tests/integration -p test_ocr_tesseract_optional.py -v
+
+  browser-e2e:
+    name: Browser E2E with application containers
+    runs-on: ubuntu-24.04
+    env:
+      COMPOSE_PROJECT_NAME: docuflow-browser-services-${{ github.run_id }}-${{ github.run_attempt }}
+      DOCUFLOW_E2E_DOCKER_NETWORK: docuflow-browser-services-${{ github.run_id }}-${{ github.run_attempt }}_default
+      POSTGRES_DB: docuflow
+      POSTGRES_USER: docuflow
+      POSTGRES_PASSWORD: docuflow_ci_${{ github.run_id }}_${{ github.run_attempt }}
+      POSTGRES_PORT: "5432"
+      REDIS_PORT: "6379"
+      DATABASE_URL: postgresql+psycopg://docuflow:docuflow_ci_${{ github.run_id }}_${{ github.run_attempt }}@127.0.0.1:5432/docuflow
+      TEST_DATABASE_URL: postgresql+psycopg://docuflow:docuflow_ci_${{ github.run_id }}_${{ github.run_attempt }}@127.0.0.1:5432/docuflow_test
+      REDIS_URL: redis://127.0.0.1:6379/0
+      ERP_REDIS_URL: redis://127.0.0.1:6379/0
+      TEST_REDIS_URL: redis://127.0.0.1:6379/15
+      DOCUFLOW_CONTAINER_DATABASE_URL: postgresql+psycopg://docuflow:docuflow_ci_${{ github.run_id }}_${{ github.run_attempt }}@postgres:5432/docuflow
+      DOCUFLOW_CONTAINER_REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: docuflow_browser_ci_${{ github.run_id }}_${{ github.run_attempt }}_not_a_secret
+      DOCUFLOW_CI_POSTGRES_VOLUME: docuflow-browser-${{ github.run_id }}-${{ github.run_attempt }}-postgres
+      DOCUFLOW_CI_REDIS_VOLUME: docuflow-browser-${{ github.run_id }}-${{ github.run_attempt }}-redis
+      DOCUFLOW_CI_DOCUMENTS_VOLUME: docuflow-browser-${{ github.run_id }}-${{ github.run_attempt }}-documents
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: 3.14.4
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - name: Install locked Python dependencies for E2E support
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements.lock
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.15.0
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Install Chromium and its system dependencies
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Start isolated PostgreSQL and Redis
+        run: >-
+          docker compose --env-file /dev/null
+          -f compose.yaml -f .github/compose.ci.yaml
+          up -d --wait postgres redis
+      - name: Run Playwright flow with containerized API and workers
+        working-directory: frontend
+        env:
+          DOCUFLOW_RUN_BROWSER_E2E: "1"
+          DOCUFLOW_BROWSER_E2E_DOCKER: "1"
+        run: npm run test:e2e
+
+  containers:
+    name: Compose validation and image builds
+    runs-on: ubuntu-24.04
+    env:
+      COMPOSE_PROJECT_NAME: docuflow-containers-${{ github.run_id }}-${{ github.run_attempt }}
+      POSTGRES_DB: docuflow
+      POSTGRES_USER: docuflow
+      POSTGRES_PASSWORD: docuflow_ci_${{ github.run_id }}_${{ github.run_attempt }}
+      DOCUFLOW_CONTAINER_DATABASE_URL: postgresql+psycopg://docuflow:docuflow_ci_${{ github.run_id }}_${{ github.run_attempt }}@postgres:5432/docuflow
+      DOCUFLOW_CONTAINER_REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: docuflow_containers_ci_${{ github.run_id }}_${{ github.run_attempt }}_not_a_secret
+      DOCUFLOW_FRONTEND_ORIGIN: http://localhost:5173
+      DOCUFLOW_CI_POSTGRES_VOLUME: docuflow-containers-${{ github.run_id }}-${{ github.run_attempt }}-postgres
+      DOCUFLOW_CI_REDIS_VOLUME: docuflow-containers-${{ github.run_id }}-${{ github.run_attempt }}-redis
+      DOCUFLOW_CI_DOCUMENTS_VOLUME: docuflow-containers-${{ github.run_id }}-${{ github.run_attempt }}-documents
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate Compose configuration without .env
+        run: >-
+          docker compose --env-file /dev/null
+          -f compose.yaml -f .github/compose.ci.yaml config --quiet
+      - name: Build API, document worker, ERP worker and frontend
+        run: >-
+          docker compose --env-file /dev/null
+          -f compose.yaml -f .github/compose.ci.yaml
+          build api document-worker erp-worker frontend

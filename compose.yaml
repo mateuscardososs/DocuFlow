@@ -16,9 +16,9 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-docuflow}
       POSTGRES_USER: ${POSTGRES_USER:-docuflow}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docuflow_local_only}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Configure POSTGRES_PASSWORD in .env}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - docuflow_local_postgres_data:/var/lib/postgresql
       - ./docker/postgres/init-test-db.sql:/docker-entrypoint-initdb.d/10-create-test-database.sql:ro
@@ -29,8 +29,168 @@ services:
       retries: 12
       start_period: 5s
 
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: runtime
+    environment:
+      DATABASE_URL: ${DOCUFLOW_CONTAINER_DATABASE_URL:?Configure DOCUFLOW_CONTAINER_DATABASE_URL in .env}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Generate JWT_SECRET_KEY in .env}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      DOCUFLOW_FRONTEND_ORIGIN: ${DOCUFLOW_FRONTEND_ORIGIN:-http://localhost:5173}
+      DOCUMENT_STORAGE_DIR: /var/lib/docuflow/documents
+      REDIS_URL: ${DOCUFLOW_CONTAINER_REDIS_URL:-redis://redis:6379/0}
+      DOCUFLOW_QUEUE_NAME: ${DOCUFLOW_QUEUE_NAME:-documents}
+      DOCUFLOW_JOB_TIMEOUT_SECONDS: ${DOCUFLOW_JOB_TIMEOUT_SECONDS:-300}
+      DOCUFLOW_MAX_ATTEMPTS: ${DOCUFLOW_MAX_ATTEMPTS:-3}
+      DOCUFLOW_STALE_AFTER_SECONDS: ${DOCUFLOW_STALE_AFTER_SECONDS:-900}
+      ERP_REDIS_URL: ${DOCUFLOW_CONTAINER_REDIS_URL:-redis://redis:6379/0}
+      DOCUFLOW_ERP_QUEUE_NAME: ${DOCUFLOW_ERP_QUEUE_NAME:-erp-submissions}
+      DOCUFLOW_ERP_JOB_TIMEOUT_SECONDS: ${DOCUFLOW_ERP_JOB_TIMEOUT_SECONDS:-60}
+      DOCUFLOW_OLLAMA_BASE_URL: ${DOCUFLOW_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      DOCUFLOW_OLLAMA_MODEL: ${DOCUFLOW_OLLAMA_MODEL:-gemma4}
+      DOCUFLOW_OLLAMA_TIMEOUT_SECONDS: ${DOCUFLOW_OLLAMA_TIMEOUT_SECONDS:-60}
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    volumes:
+      - docuflow_local_private_documents:/var/lib/docuflow/documents
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "backend.app.compose_healthcheck", "api"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  document-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: document-worker
+    command:
+      - rq
+      - worker
+      - --url
+      - ${DOCUFLOW_CONTAINER_REDIS_URL:-redis://redis:6379/0}
+      - --name
+      - docuflow-document-worker
+      - ${DOCUFLOW_QUEUE_NAME:-documents}
+    environment:
+      DATABASE_URL: ${DOCUFLOW_CONTAINER_DATABASE_URL:?Configure DOCUFLOW_CONTAINER_DATABASE_URL in .env}
+      REDIS_URL: ${DOCUFLOW_CONTAINER_REDIS_URL:-redis://redis:6379/0}
+      DOCUFLOW_QUEUE_NAME: ${DOCUFLOW_QUEUE_NAME:-documents}
+      ERP_REDIS_URL: ${DOCUFLOW_CONTAINER_REDIS_URL:-redis://redis:6379/0}
+      DOCUFLOW_ERP_QUEUE_NAME: ${DOCUFLOW_ERP_QUEUE_NAME:-erp-submissions}
+      DOCUMENT_STORAGE_DIR: /var/lib/docuflow/documents
+      DOCUFLOW_OLLAMA_BASE_URL: ${DOCUFLOW_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      DOCUFLOW_OLLAMA_MODEL: ${DOCUFLOW_OLLAMA_MODEL:-gemma4}
+      DOCUFLOW_OLLAMA_TIMEOUT_SECONDS: ${DOCUFLOW_OLLAMA_TIMEOUT_SECONDS:-60}
+      DOCUFLOW_OCR_LANGUAGE: ${DOCUFLOW_OCR_LANGUAGE:-por+eng}
+      DOCUFLOW_OCR_DPI: ${DOCUFLOW_OCR_DPI:-300}
+      DOCUFLOW_OCR_TIMEOUT_SECONDS: ${DOCUFLOW_OCR_TIMEOUT_SECONDS:-30}
+      DOCUFLOW_NATIVE_TEXT_MIN_CHARS: ${DOCUFLOW_NATIVE_TEXT_MIN_CHARS:-1}
+      DOCUFLOW_TESSERACT_CMD: ${DOCUFLOW_TESSERACT_CMD:-tesseract}
+      DOCUFLOW_RQ_WORKER_NAME: docuflow-document-worker
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - docuflow_local_private_documents:/var/lib/docuflow/documents
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "backend.app.compose_healthcheck", "document-worker"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  erp-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: runtime
+    command:
+      - rq
+      - worker
+      - --url
+      - ${DOCUFLOW_CONTAINER_REDIS_URL:-redis://redis:6379/0}
+      - --name
+      - docuflow-erp-worker
+      - ${DOCUFLOW_ERP_QUEUE_NAME:-erp-submissions}
+    environment:
+      DATABASE_URL: ${DOCUFLOW_CONTAINER_DATABASE_URL:?Configure DOCUFLOW_CONTAINER_DATABASE_URL in .env}
+      REDIS_URL: ${DOCUFLOW_CONTAINER_REDIS_URL:-redis://redis:6379/0}
+      ERP_REDIS_URL: ${DOCUFLOW_CONTAINER_REDIS_URL:-redis://redis:6379/0}
+      DOCUFLOW_ERP_QUEUE_NAME: ${DOCUFLOW_ERP_QUEUE_NAME:-erp-submissions}
+      DOCUFLOW_RQ_WORKER_NAME: docuflow-erp-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "backend.app.compose_healthcheck", "erp-worker"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+      - /var/cache/nginx:rw,noexec,nosuid,size=16m
+      - /var/run:rw,noexec,nosuid,size=1m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
 volumes:
   docuflow_local_redis_data:
     name: docuflow_local_redis_data
   docuflow_local_postgres_data:
     name: docuflow_local_postgres_data
+  docuflow_local_private_documents:
+    name: docuflow_local_private_documents
