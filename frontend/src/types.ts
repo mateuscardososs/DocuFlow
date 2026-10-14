@@ -53,12 +53,32 @@ export interface Finding {
 export interface ValidationReport {
   status: Exclude<DocumentStatus, null>
   findings: Finding[]
+  commercial_policy: {
+    version: number
+    default_total_tolerance: string
+    currency_tolerances: Record<string, string>
+  }
+}
+
+export interface CommercialPolicy {
+  version: number
+  default_total_tolerance: string
+  currency_tolerances: Record<string, string>
+  created_by_user_id: number | null
+  created_by_email: string | null
+  created_at: string | null
 }
 
 export interface DocumentSummary {
   id: number
   workspace_id: number
   purchase_order_id: number
+  assignee_user_id: number | null
+  assignee_email: string | null
+  assigned_by_user_id: number | null
+  assigned_by_email: string | null
+  assigned_at: string | null
+  assignment_status: 'assigned' | 'unassigned'
   purchase_order_reference?: string | null
   supplier_name?: string | null
   original_filename: string
@@ -113,12 +133,28 @@ export interface DocumentReviewResponse {
 
 export interface AuditEvent {
   id: number
-  event_type: 'review' | 'correction' | 'approval' | 'rejection' | 'erp_submission' | 'erp_attempt' | 'erp_success' | 'erp_failure'
+  event_type: 'review' | 'correction' | 'approval' | 'rejection' | 'erp_submission' | 'erp_attempt' | 'erp_success' | 'erp_failure' | 'assignment'
   version: number
   actor_user_id: number
   justification: string | null
   details: Record<string, unknown> | null
   created_at: string
+}
+
+export interface WorkspaceMember {
+  id: number
+  email: string
+  roles: Role[]
+}
+
+export interface DocumentAssignment {
+  document_id: number
+  assignee_user_id: number | null
+  assignee_email: string | null
+  assigned_by_user_id: number | null
+  assigned_by_email: string | null
+  assigned_at: string | null
+  assignment_status: 'assigned' | 'unassigned'
 }
 
 export interface ERPSubmission {
@@ -131,4 +167,51 @@ export interface ERPSubmission {
   failure_message: string | null
   requested_at: string
   updated_at: string
+}
+
+export interface WorkspaceDashboard {
+  start_date: string
+  end_date: string
+  documents: {
+    queued: number
+    processing: number
+    awaiting_review: number
+    awaiting_approval: number
+    processing_failed: number
+  }
+  erp_submissions: { pending: number; succeeded: number; failed: number }
+  volume_total: number
+  document_volume: Array<{ date: string; count: number }>
+  common_divergences: Array<{ code: string; count: number }>
+}
+
+export interface PurchaseOrderImportLineError {
+  line_number: number
+  reason: string
+}
+
+export interface PurchaseOrderImportPreviewOrder {
+  reference: string
+  supplier_identifier: string
+  supplier_name: string
+  currency: string
+  total: string
+  item_count: number
+  line_numbers: number[]
+  outcome: 'new' | 'duplicate' | 'conflict'
+}
+
+export interface PurchaseOrderImportPreview {
+  total_rows: number
+  valid_rows: number
+  orders: PurchaseOrderImportPreviewOrder[]
+  errors: PurchaseOrderImportLineError[]
+}
+
+export interface PurchaseOrderImportConfirmation {
+  total_rows: number
+  valid_rows: number
+  imported: string[]
+  ignored_duplicates: string[]
+  errors: PurchaseOrderImportLineError[]
 }

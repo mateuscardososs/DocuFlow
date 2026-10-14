@@ -5,8 +5,9 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
+from backend.app.commercial_policy import CommercialPolicy
 from backend.app.evidence import evidence_is_on_page
 from backend.app.schemas import ExtractedField, PurchaseOrder, ReferenceDocument
 
@@ -28,6 +29,15 @@ class ValidationReport(BaseModel):
 
     status: Literal["blocked", "divergent", "ready_for_review"]
     findings: list[Finding]
+    commercial_policy: "AppliedCommercialPolicy" = Field(default_factory=lambda: AppliedCommercialPolicy())
+
+
+class AppliedCommercialPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    version: int = 0
+    default_total_tolerance: str = "0.01"
+    currency_tolerances: dict[str, str] = Field(default_factory=dict)
 
 
 def _decimal(value: str | None) -> Decimal | None:
@@ -43,7 +53,10 @@ def validate_document(
     document: ReferenceDocument,
     order: PurchaseOrder,
     page_texts: dict[int, str],
+    *,
+    commercial_policy: CommercialPolicy | None = None,
 ) -> ValidationReport:
+    applied_policy = commercial_policy or CommercialPolicy.defaults()
     findings: list[Finding] = []
 
     def add(severity: Literal["blocking_error", "divergence", "warning"], code: str, message: str) -> None:
@@ -96,7 +109,7 @@ def validate_document(
             elif amount < 0:
                 add("blocking_error", "negative_money", f"{name.capitalize()} não pode ser negativo no item {index}.")
         if quantity is not None and unit_price is not None and line_total is not None:
-            if abs(quantity * unit_price - line_total) > TOLERANCE:
+            if abs(quantity * unit_price - line_total) > applied_policy.tolerance_for(document.currency.value):
                 add("divergence", "line_total_mismatch", f"Quantidade × preço não confere com o total do item {index}.")
             parsed_items.append({
                 "code": item.code.value or "",
@@ -111,7 +124,7 @@ def validate_document(
     elif document_total < 0:
         add("blocking_error", "negative_money", "Total do documento não pode ser negativo.")
     elif len(parsed_items) == len(document.items):
-        if abs(sum((item["line_total"] for item in parsed_items), Decimal("0")) - document_total) > TOLERANCE:
+        if abs(sum((item["line_total"] for item in parsed_items), Decimal("0")) - document_total) > applied_policy.tolerance_for(document.currency.value):
             add("divergence", "document_total_mismatch", "A soma dos itens não confere com o total do documento.")
 
     for name, actual, expected in (
@@ -145,7 +158,7 @@ def validate_document(
     expected_total = _decimal(order.total)
     if expected_total is None:
         add("blocking_error", "invalid_order_decimal", "Total do pedido cadastrado não é uma string decimal válida.")
-    elif document_total is not None and abs(document_total - expected_total) > TOLERANCE:
+    elif document_total is not None and abs(document_total - expected_total) > applied_policy.tolerance_for(document.currency.value):
         add("divergence", "order_total_mismatch", "Total do documento diverge do total do pedido cadastrado.")
 
     for element in document.unsupported_elements:
@@ -157,4 +170,8 @@ def validate_document(
         status = "divergent"
     else:
         status = "ready_for_review"
-    return ValidationReport(status=status, findings=findings)
+    return ValidationReport(
+        status=status,
+        findings=findings,
+        commercial_policy=AppliedCommercialPolicy.model_validate(applied_policy.snapshot()),
+    )

@@ -2,7 +2,9 @@
 
 import os
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
@@ -16,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.models.identity import User, Workspace, WorkspaceMembership
+from backend.app.models.commercial_policy import WorkspaceCommercialPolicyEntity
 from backend.app.models.document import (
     DocumentApprovalEntity,
     DocumentAuditEventEntity,
@@ -26,10 +29,20 @@ from backend.app.models.erp_submission import ERPSubmissionEntity
 from backend.app.repositories.erp_submissions import SqlAlchemyERPSubmissionRepository
 from backend.app.integrations.erp import DemoERPClient
 from backend.app.auth import hash_password
-from backend.app.schemas import ReferenceDocument
-from backend.app.models.purchase_order import PurchaseOrderEntity, PurchaseOrderItem, Supplier
+from backend.app.schemas import PurchaseOrder, ReferenceDocument
+from backend.app.models.purchase_order import (
+    PurchaseOrderEntity,
+    PurchaseOrderImportAuditEntity,
+    PurchaseOrderItem,
+    Supplier,
+)
 from backend.app.repositories.purchase_orders import SqlAlchemyPurchaseOrderRepository
 from backend.app.repositories.documents import SqlAlchemyDocumentRepository
+from backend.app.repositories.dashboard import SqlAlchemyDashboardRepository
+from backend.app.repositories.commercial_policies import (
+    PolicyVersionConflict,
+    SqlAlchemyCommercialPolicyRepository,
+)
 from backend.app.seed_reference_order import seed_reference_order
 from backend.app.services.document_processing import DocumentProcessingResult
 from backend.app.services.document_review import DocumentReviewService
@@ -132,7 +145,7 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         )
         with self.engine.connect() as connection:
             revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
-        self.assertEqual(revision, "20261017_0007")
+        self.assertEqual(revision, "20261020_0010")
         self.assertIn(
             "uq_purchase_orders_workspace_reference",
             {item["name"] for item in inspector.get_unique_constraints("purchase_orders")},
@@ -146,6 +159,12 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
             .issubset(set(inspector.get_table_names()))
         )
         self.assertIn("erp_submissions", inspector.get_table_names())
+        self.assertIn("purchase_order_import_audits", inspector.get_table_names())
+        self.assertIn("workspace_commercial_policy_versions", inspector.get_table_names())
+        self.assertIn(
+            "uq_workspace_policy_version",
+            {item["name"] for item in inspector.get_unique_constraints("workspace_commercial_policy_versions")},
+        )
         self.assertIn(
             "uq_erp_submission_workspace_document_version",
             {item["name"] for item in inspector.get_unique_constraints("erp_submissions")},
@@ -154,6 +173,63 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
             "uq_documents_workspace_sha256",
             {item["name"] for item in inspector.get_unique_constraints("documents")},
         )
+
+    def test_commercial_policy_versions_persist_author_currency_values_and_history(self):
+        suffix = uuid4().hex
+        user = User(email=f"policy-{suffix}@example.test", password_hash="not-a-login")
+        with Session(self.engine) as session:
+            session.add(user)
+            session.flush()
+            actor_id = user.id
+            session.commit()
+        repository = SqlAlchemyCommercialPolicyRepository(self.session_factory)
+        first = repository.update(
+            workspace_id=self.demo_workspace_id,
+            expected_version=0,
+            actor_user_id=actor_id,
+            currency_tolerances={"BRL": "0.05", "USD": "1.25"},
+        )
+        second = repository.update(
+            workspace_id=self.demo_workspace_id,
+            expected_version=1,
+            actor_user_id=actor_id,
+            currency_tolerances={"BRL": "0.10"},
+        )
+        self.assertEqual((first.version, second.version), (1, 2))
+        history = repository.history(self.demo_workspace_id)
+        self.assertEqual([row.version for row in history[:2]], [2, 1])
+        self.assertEqual(history[1].currency_tolerances, {"BRL": "0.05", "USD": "1.25"})
+        self.assertEqual(history[1].created_by_user_id, actor_id)
+        self.assertIsNotNone(history[1].created_at)
+
+    def test_concurrent_commercial_policy_updates_use_optimistic_version(self):
+        suffix = uuid4().hex
+        workspace = Workspace(slug=f"policy-race-{suffix}", name="Concorrência política")
+        user = User(email=f"policy-race-{suffix}@example.test", password_hash="not-a-login")
+        with Session(self.engine) as session:
+            session.add_all([workspace, user])
+            session.flush()
+            workspace_id, actor_id = workspace.id, user.id
+            session.commit()
+        repository = SqlAlchemyCommercialPolicyRepository(self.session_factory)
+
+        def update(currency: str):
+            try:
+                result = repository.update(
+                    workspace_id=workspace_id,
+                    expected_version=0,
+                    actor_user_id=actor_id,
+                    currency_tolerances={currency: "0.05"},
+                )
+                return ("saved", result.version)
+            except PolicyVersionConflict:
+                return ("conflict", None)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(update, ["BRL", "USD"]))
+        self.assertCountEqual([result[0] for result in results], ["saved", "conflict"])
+        self.assertEqual(len(repository.history(workspace_id)), 1)
+        self.assertEqual(repository.current(workspace_id).version, 1)
 
     def test_migration_keeps_legacy_orders_in_demo_workspace(self):
         with self.engine.connect() as connection:
@@ -259,6 +335,90 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         self.assertIsNone(
             self.repository.get_by_reference(f"MISSING-{suffix}", self.demo_workspace_id)
         )
+
+    def test_csv_import_persists_decimals_idempotently_and_isolates_workspaces(self):
+        seed_reference_order(self.session_factory)
+        user = User(
+            email=f"csv-operator-{uuid4().hex}@example.test",
+            password_hash=hash_password("integration-test-password"),
+        )
+        with Session(self.engine) as session:
+            session.add(user)
+            session.flush()
+            actor_id = user.id
+            session.add(WorkspaceMembership(
+                user_id=actor_id,
+                workspace_id=self.demo_workspace_id,
+                role="operator",
+            ))
+            session.commit()
+
+        reference = f"PC-PG-{uuid4().hex[:12]}"
+        imported_order = PurchaseOrder.model_validate({
+            "reference": reference,
+            "supplier_name": "Metalúrgica Horizonte Ltda.",
+            "supplier_identifier": "FORN-0001",
+            "currency": "BRL",
+            "total": "12.50",
+            "items": [{
+                "code": "DEC-01",
+                "description": "Item decimal",
+                "quantity": "1.250",
+                "unit_price": "10.00",
+                "line_total": "12.50",
+            }],
+        })
+        created, ignored = self.repository.import_orders(
+            [imported_order],
+            workspace_id=self.demo_workspace_id,
+            actor_user_id=actor_id,
+            total_rows=1,
+            duplicate_references=set(),
+            error_count=0,
+        )
+        self.assertEqual(created, [reference])
+        self.assertEqual(ignored, [])
+        repeated, repeated_duplicates = self.repository.import_orders(
+            [imported_order],
+            workspace_id=self.demo_workspace_id,
+            actor_user_id=actor_id,
+            total_rows=1,
+            duplicate_references={reference},
+            error_count=0,
+        )
+        self.assertEqual(repeated, [])
+        self.assertEqual(repeated_duplicates, [reference])
+        stored = self.repository.get_by_reference(reference, self.demo_workspace_id)
+        self.assertEqual(stored.items[0].quantity, "1.250")
+        self.assertEqual(stored.items[0].line_total, "12.50")
+
+        with Session(self.engine) as session:
+            audits = session.execute(
+                select(
+                    PurchaseOrderImportAuditEntity.workspace_id,
+                    PurchaseOrderImportAuditEntity.imported_orders,
+                    PurchaseOrderImportAuditEntity.ignored_duplicates,
+                ).where(
+                    PurchaseOrderImportAuditEntity.actor_user_id == actor_id
+                )
+            ).all()
+            foreign_workspace = Workspace(
+                slug=f"csv-other-{uuid4().hex}", name="Outro workspace"
+            )
+            session.add(foreign_workspace)
+            session.flush()
+            foreign_workspace_id = foreign_workspace.id
+            session.commit()
+        self.assertEqual(len(audits), 2)
+        self.assertEqual(audits[0].workspace_id, self.demo_workspace_id)
+        self.assertEqual(audits[0].imported_orders, 1)
+        self.assertEqual(audits[1].ignored_duplicates, 1)
+        self.assertIsNone(
+            self.repository.get_supplier_name_by_identifier(
+                "FORN-0001", foreign_workspace_id
+            )
+        )
+        self.assertIsNone(self.repository.get_by_reference(reference, foreign_workspace_id))
 
     def test_purchase_order_is_not_queryable_from_another_workspace(self):
         suffix = uuid4().hex
@@ -721,6 +881,100 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
             )
         self.assertEqual(event_types, {"review", "correction", "approval"})
 
+    def test_document_assignment_swap_removal_filters_and_audit_persist_in_postgresql(self):
+        seed_reference_order(self.session_factory)
+        with Session(self.engine) as session:
+            order_id = session.scalar(
+                select(PurchaseOrderEntity.id).where(
+                    PurchaseOrderEntity.workspace_id == self.demo_workspace_id,
+                    PurchaseOrderEntity.reference == "PC-2026-0001",
+                )
+            )
+            operator = User(
+                email=f"assignment-operator-{uuid4().hex}@example.test",
+                password_hash=hash_password("integration-test-password"),
+            )
+            first_assignee = User(
+                email=f"assignment-first-{uuid4().hex}@example.test",
+                password_hash=hash_password("integration-test-password"),
+            )
+            second_assignee = User(
+                email=f"assignment-second-{uuid4().hex}@example.test",
+                password_hash=hash_password("integration-test-password"),
+            )
+            session.add_all([operator, first_assignee, second_assignee])
+            session.flush()
+            for member in (operator, first_assignee, second_assignee):
+                session.add(WorkspaceMembership(
+                    user_id=member.id,
+                    workspace_id=self.demo_workspace_id,
+                    role="operator",
+                ))
+            document = DocumentEntity(
+                workspace_id=self.demo_workspace_id,
+                purchase_order_id=order_id,
+                original_filename="assignment-integration.pdf",
+                size_bytes=128,
+                content_type="application/pdf",
+                sha256=uuid4().hex + uuid4().hex,
+                storage_key=f"{self.demo_workspace_id}/{uuid4().hex}.pdf",
+                processing_status="ready_for_review",
+                review_status="pending",
+                review_version=1,
+                extracted_document=reference_payload(),
+                final_status="ready_for_review",
+            )
+            session.add(document)
+            session.commit()
+            document_id, operator_id = document.id, operator.id
+            first_id, second_id = first_assignee.id, second_assignee.id
+
+        repository = SqlAlchemyDocumentRepository(self.session_factory)
+        assigned = repository.assign(
+            document_id=document_id,
+            workspace_id=self.demo_workspace_id,
+            assignee_user_id=first_id,
+            actor_user_id=operator_id,
+        )
+        self.assertEqual(assigned.assignee.email, first_assignee.email)
+        repository.assign(
+            document_id=document_id,
+            workspace_id=self.demo_workspace_id,
+            assignee_user_id=second_id,
+            actor_user_id=operator_id,
+        )
+        self.assertEqual(
+            [item.id for item in repository.list_for_workspace(
+                self.demo_workspace_id, limit=100, offset=0, assignee_user_id=second_id
+            )],
+            [document_id],
+        )
+        repository.assign(
+            document_id=document_id,
+            workspace_id=self.demo_workspace_id,
+            assignee_user_id=None,
+            actor_user_id=operator_id,
+        )
+        self.assertEqual(
+            [item.id for item in repository.list_for_workspace(
+                self.demo_workspace_id, limit=100, offset=0, unassigned=True
+            )].count(document_id),
+            1,
+        )
+        with Session(self.engine) as session:
+            stored = session.get(DocumentEntity, document_id)
+            events = session.scalars(
+                select(DocumentAuditEventEntity).where(
+                    DocumentAuditEventEntity.document_id == document_id
+                ).order_by(DocumentAuditEventEntity.id)
+            ).all()
+            self.assertIsNone(stored.assignee_user_id)
+            self.assertEqual(stored.assigned_by_user_id, operator_id)
+            self.assertIsNotNone(stored.assigned_at)
+            self.assertEqual([event.event_type for event in events], ["assignment"] * 3)
+            self.assertEqual(events[-1].details["previous_assignee_user_id"], second_id)
+            self.assertIsNone(events[-1].details["assignee_user_id"])
+
     def test_erp_submission_snapshot_idempotency_and_audit_persist_in_postgresql(self):
         seed_reference_order(self.session_factory)
         with Session(self.engine) as session:
@@ -813,6 +1067,93 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
             ))
         self.assertEqual(snapshot, payload)
         self.assertEqual(event_types, {"erp_submission", "erp_attempt", "erp_success"})
+
+    def test_dashboard_aggregates_findings_and_states_with_postgresql_queries(self):
+        suffix = uuid4().hex
+        workspace = Workspace(slug=f"dashboard-{suffix}", name="Dashboard de integração")
+        user = User(email=f"dashboard-{suffix}@example.test", password_hash="not-a-login")
+        with Session(self.engine) as session:
+            session.add_all([workspace, user])
+            session.flush()
+            supplier = Supplier(
+                workspace_id=workspace.id, name="Fornecedor de teste", identifier=f"S-{suffix}"
+            )
+            session.add(supplier)
+            session.flush()
+            order = PurchaseOrderEntity(
+                workspace_id=workspace.id, supplier_id=supplier.id, reference=f"PO-{suffix}",
+                currency="BRL", total=Decimal("2.00"),
+                items=[PurchaseOrderItem(
+                    code="ITEM", description="Item de teste", quantity=Decimal("1"),
+                    unit_price=Decimal("2.00"), line_total=Decimal("2.00"),
+                )],
+            )
+            session.add(order)
+            session.flush()
+            docs = []
+            for index, code in enumerate(("price_mismatch", "price_mismatch", "supplier_mismatch")):
+                document = DocumentEntity(
+                    workspace_id=workspace.id, purchase_order_id=order.id,
+                    original_filename="private.pdf", size_bytes=10, content_type="application/pdf",
+                    sha256=f"{suffix}-{index}", storage_key=f"private/{suffix}-{index}",
+                    uploaded_at=datetime(2026, 10, 14, 12, index, tzinfo=timezone.utc),
+                    processing_status=("queued" if index == 0 else "ready_for_review"),
+                    review_status="pending", review_version=1,
+                    reviewed_document={"corrected": True} if index == 2 else None,
+                    final_status="divergent",
+                    validation_result={"status": "divergent", "findings": [{
+                        "severity": "divergence", "code": code, "message": "Informação de teste",
+                    }]},
+                )
+                session.add(document)
+                docs.append(document)
+            session.flush()
+            session.add_all([
+                DocumentEntity(
+                    workspace_id=workspace.id,
+                    purchase_order_id=order.id,
+                    original_filename=f"erp-{state}.pdf",
+                    size_bytes=10,
+                    content_type="application/pdf",
+                    sha256=f"{suffix}-erp-{state}",
+                    storage_key=f"private/{suffix}-erp-{state}",
+                    uploaded_at=datetime(2025, 10, 14, 12, tzinfo=timezone.utc),
+                    processing_status="ready_for_review",
+                    review_status="approved",
+                    review_version=1,
+                    final_status="ready_for_review",
+                )
+                for state in ("queued", "processing", "succeeded", "failed")
+            ])
+            session.flush()
+            erp_documents = session.scalars(
+                select(DocumentEntity).where(
+                    DocumentEntity.workspace_id == workspace.id,
+                    DocumentEntity.original_filename.like("erp-%"),
+                )
+            ).all()
+            session.add_all([
+                ERPSubmissionEntity(
+                    workspace_id=workspace.id, document_id=erp_document.id, approved_version=1,
+                    requested_by_user_id=user.id, state=state,
+                )
+                for erp_document, state in zip(erp_documents, ("queued", "processing", "succeeded", "failed"))
+            ])
+            workspace_id = workspace.id
+            session.commit()
+
+        result = SqlAlchemyDashboardRepository(self.session_factory).summarize(
+            workspace_id, date(2026, 10, 14), date(2026, 10, 14)
+        )
+        self.assertEqual(result["documents"]["queued"], 1)
+        self.assertEqual(result["documents"]["awaiting_review"], 1)
+        self.assertEqual(result["documents"]["awaiting_approval"], 1)
+        self.assertEqual(result["erp_submissions"], {"pending": 2, "succeeded": 1, "failed": 1})
+        self.assertEqual(result["volume_total"], 3)
+        self.assertEqual(result["common_divergences"], [
+            {"code": "price_mismatch", "count": 2},
+            {"code": "supplier_mismatch", "count": 1},
+        ])
 
 
 if __name__ == "__main__":

@@ -23,6 +23,12 @@ class DocumentSummary(BaseModel):
     id: int
     workspace_id: int
     purchase_order_id: int
+    assignee_user_id: int | None
+    assignee_email: str | None
+    assigned_by_user_id: int | None
+    assigned_by_email: str | None
+    assigned_at: datetime | None
+    assignment_status: Literal["assigned", "unassigned"]
     purchase_order_reference: str | None = None
     supplier_name: str | None = None
     original_filename: str
@@ -69,6 +75,32 @@ class DocumentEnqueueResponse(BaseModel):
     duplicate: bool = False
     state: Literal["queued", "processing", "ready_for_review", "failed"]
     processing_status: Literal["queued", "processing", "ready_for_review", "failed"]
+
+
+class WorkspaceMemberView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    email: str
+    roles: list[Literal["operator", "approver"]]
+
+
+class DocumentAssignmentRequest(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    assignee_user_id: int | None
+
+
+class DocumentAssignmentView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    document_id: int
+    assignee_user_id: int | None
+    assignee_email: str | None
+    assigned_by_user_id: int | None
+    assigned_by_email: str | None
+    assigned_at: datetime | None
+    assignment_status: Literal["assigned", "unassigned"]
 
 
 class ReviewCorrectionRequest(BaseModel):
@@ -138,7 +170,7 @@ class DocumentAuditEventView(BaseModel):
     id: int
     event_type: Literal[
         "review", "correction", "approval", "rejection",
-        "erp_submission", "erp_attempt", "erp_success", "erp_failure",
+        "erp_submission", "erp_attempt", "erp_success", "erp_failure", "assignment",
     ]
     version: int
     actor_user_id: int

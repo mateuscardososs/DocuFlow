@@ -2,6 +2,7 @@ import unittest
 
 from pydantic import ValidationError
 
+from backend.app.commercial_policy import CommercialPolicy
 from backend.app.schemas import PurchaseOrder, ReferenceDocument
 from backend.app.validation import validate_document
 
@@ -128,6 +129,67 @@ class ValidationTests(unittest.TestCase):
         report = self.validate(data)
         self.assertEqual(report.status, "ready_for_review")
         self.assertEqual(report.findings, [])
+
+    def test_configured_currency_tolerance_applies_to_total_checks_and_is_snapshotted(self):
+        data = reference_document()
+        data["items"][0]["line_total"]["value"] = "855.04"
+        data["document_total"]["value"] = "1250.04"
+        policy = CommercialPolicy(
+            version=4,
+            currency_tolerances={"BRL": "0.05", "USD": "0.02"},
+        )
+
+        report = validate_document(
+            ReferenceDocument.model_validate(data),
+            PurchaseOrder.model_validate(purchase_order()),
+            PAGE_TEXT,
+            commercial_policy=policy,
+        )
+
+        self.assertEqual(report.status, "ready_for_review")
+        self.assertEqual(report.commercial_policy.version, 4)
+        self.assertEqual(report.commercial_policy.currency_tolerances["BRL"], "0.05")
+
+    def test_currency_without_override_keeps_default_tolerance(self):
+        data = reference_document()
+        data["items"][0]["line_total"]["value"] = "855.03"
+        data["document_total"]["value"] = "1250.03"
+        policy = CommercialPolicy(version=2, currency_tolerances={"USD": "0.10"})
+
+        report = validate_document(
+            ReferenceDocument.model_validate(data),
+            PurchaseOrder.model_validate(purchase_order()),
+            PAGE_TEXT,
+            commercial_policy=policy,
+        )
+
+        self.assertEqual(report.status, "divergent")
+        self.assertEqual(report.commercial_policy.version, 2)
+        self.assertTrue(any(f.code == "line_total_mismatch" for f in report.findings))
+
+    def test_currency_policy_does_not_change_fixed_unit_price_comparison(self):
+        data = reference_document()
+        data["items"][0]["unit_price"]["value"] = "85.53"
+        data["items"][0]["line_total"]["value"] = "855.30"
+        data["document_total"]["value"] = "1250.30"
+        policy = CommercialPolicy(version=1, currency_tolerances={"BRL": "0.50"})
+
+        report = validate_document(
+            ReferenceDocument.model_validate(data),
+            PurchaseOrder.model_validate(purchase_order()),
+            PAGE_TEXT,
+            commercial_policy=policy,
+        )
+
+        self.assertEqual(report.status, "divergent")
+        self.assertTrue(any(f.code == "order_price_mismatch" for f in report.findings))
+        self.assertFalse(any(f.code == "line_total_mismatch" for f in report.findings))
+
+    def test_default_commercial_policy_preserves_one_cent_tolerance(self):
+        report = self.validate()
+
+        self.assertEqual(report.commercial_policy.version, 0)
+        self.assertEqual(report.commercial_policy.default_total_tolerance, "0.01")
 
     def test_unsupported_element_is_a_warning_for_human_review(self):
         data = reference_document()

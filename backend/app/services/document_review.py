@@ -2,6 +2,7 @@
 
 import re
 
+from backend.app.commercial_policy import CommercialPolicy
 from backend.app.models.document import DocumentEntity
 from backend.app.repositories.documents import DocumentRepository
 from backend.app.repositories.purchase_orders import PurchaseOrderRepository
@@ -150,4 +151,8 @@ class DocumentReviewService:
             int(page["number"]): str(page["text"])
             for page in (current.page_texts or [])
         }
-        return validate_document(document, order, page_texts)
+        stored_report = current.validation_result or {}
+        policy = CommercialPolicy.from_snapshot(stored_report.get("commercial_policy"))
+        return validate_document(
+            document, order, page_texts, commercial_policy=policy
+        )

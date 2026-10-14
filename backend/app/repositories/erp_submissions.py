@@ -52,7 +52,7 @@ class SqlAlchemyERPSubmissionRepository:
                     DocumentEntity.id == document_id,
                     DocumentEntity.workspace_id == workspace_id,
                 )
-                .with_for_update()
+                .with_for_update(of=DocumentEntity)
             )
             if document is None:
                 raise ERPSubmissionNotFound
@@ -133,7 +133,7 @@ class SqlAlchemyERPSubmissionRepository:
                     DocumentEntity.id == candidate.document_id,
                     DocumentEntity.workspace_id == candidate.workspace_id,
                 )
-                .with_for_update()
+                .with_for_update(of=DocumentEntity)
             )
             submission = session.scalar(
                 select(ERPSubmissionEntity)

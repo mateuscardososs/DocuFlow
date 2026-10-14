@@ -1,12 +1,18 @@
 import type {
   AuditEvent,
+  CommercialPolicy,
   DocumentAnalysisResponse,
   DocumentDetail,
+  DocumentAssignment,
   DocumentReviewResponse,
   DocumentSummary,
   ERPSubmission,
+  PurchaseOrderImportConfirmation,
+  PurchaseOrderImportPreview,
   ReferenceDocument,
   UserProfile,
+  WorkspaceMember,
+  WorkspaceDashboard,
 } from './types'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000').replace(/\/$/, '')
@@ -37,8 +43,42 @@ export class DocuFlowApi {
     return new DocuFlowApi(token).request('/auth/me')
   }
 
-  listDocuments(workspaceId: number): Promise<DocumentSummary[]> {
-    return this.workspaceRequest(workspaceId, '/documents?limit=100&offset=0')
+  listDocuments(workspaceId: number, assignmentFilter: 'all' | 'mine' | 'unassigned' = 'all'): Promise<DocumentSummary[]> {
+    const query = new URLSearchParams({ limit: '100', offset: '0' })
+    if (assignmentFilter === 'mine') query.set('assigned_to_me', 'true')
+    if (assignmentFilter === 'unassigned') query.set('unassigned', 'true')
+    return this.workspaceRequest(workspaceId, `/documents?${query.toString()}`)
+  }
+
+  listWorkspaceMembers(workspaceId: number): Promise<WorkspaceMember[]> {
+    return this.workspaceRequest(workspaceId, `/workspaces/${workspaceId}/members`)
+  }
+
+  getDashboard(workspaceId: number, startDate: string, endDate: string): Promise<WorkspaceDashboard> {
+    const query = new URLSearchParams({ start_date: startDate, end_date: endDate })
+    return this.workspaceRequest(workspaceId, `/dashboard?${query.toString()}`)
+  }
+
+  getCommercialPolicy(workspaceId: number): Promise<CommercialPolicy> {
+    return this.workspaceRequest(workspaceId, '/commercial-policy')
+  }
+
+  getCommercialPolicyHistory(workspaceId: number): Promise<CommercialPolicy[]> {
+    return this.workspaceRequest(workspaceId, '/commercial-policy/history')
+  }
+
+  updateCommercialPolicy(workspaceId: number, expectedVersion: number, currencyTolerances: Record<string, string>): Promise<CommercialPolicy> {
+    return this.workspaceRequest(workspaceId, '/commercial-policy', {
+      method: 'PUT',
+      body: JSON.stringify({ expected_version: expectedVersion, currency_tolerances: currencyTolerances }),
+    })
+  }
+
+  assignDocument(workspaceId: number, documentId: number, assigneeUserId: number | null): Promise<DocumentAssignment> {
+    return this.workspaceRequest(workspaceId, `/documents/${documentId}/assignment`, {
+      method: 'PUT',
+      body: JSON.stringify({ assignee_user_id: assigneeUserId }),
+    })
   }
 
   getDocument(workspaceId: number, documentId: number): Promise<DocumentDetail> {
@@ -54,6 +94,24 @@ export class DocuFlowApi {
     form.append('file', file)
     form.append('purchase_order_reference', purchaseOrderReference)
     return this.workspaceRequest(workspaceId, '/documents/analyze', { method: 'POST', body: form })
+  }
+
+  previewPurchaseOrderImport(workspaceId: number, file: File): Promise<PurchaseOrderImportPreview> {
+    const form = new window.FormData()
+    form.append('file', file)
+    return this.workspaceRequest(workspaceId, '/purchase-orders/import/preview', {
+      method: 'POST',
+      body: form,
+    })
+  }
+
+  confirmPurchaseOrderImport(workspaceId: number, file: File): Promise<PurchaseOrderImportConfirmation> {
+    const form = new window.FormData()
+    form.append('file', file)
+    return this.workspaceRequest(workspaceId, '/purchase-orders/import/confirm', {
+      method: 'POST',
+      body: form,
+    })
   }
 
   correct(
@@ -92,8 +150,9 @@ export class DocuFlowApi {
     return this.workspaceRequest(workspaceId, `/erp-submissions/${submissionId}`)
   }
 
-  download(workspaceId: number, documentId: number): Promise<Response> {
-    return this.workspaceRequest(workspaceId, `/documents/${documentId}/download`, {}, false)
+  download(workspaceId: number, documentId: number, inline = false): Promise<Response> {
+    const query = inline ? '?inline=true' : ''
+    return this.workspaceRequest(workspaceId, `/documents/${documentId}/download${query}`, {}, false)
   }
 
   private workspaceRequest<T>(workspaceId: number, path: string, init: RequestInit = {}, jsonResponse = true): Promise<T> {

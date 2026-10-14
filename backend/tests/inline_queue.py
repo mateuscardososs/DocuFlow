@@ -16,6 +16,7 @@ class InlineDocumentQueue:
             app.state.document_storage,
             app.state.document_processing_service,
             DocumentQueueConfig("redis://test-only", max_attempts=1),
+            commercial_policy_repository=app.state.commercial_policy_repository,
         )
         try:
             worker.process(document_id=document_id, job_id=job_id)

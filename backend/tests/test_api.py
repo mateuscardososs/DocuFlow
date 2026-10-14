@@ -144,6 +144,14 @@ class ApiTests(unittest.TestCase):
                 "Access-Control-Request-Headers": "authorization,x-workspace-id",
             },
         )
+        allowed_policy_update = client.options(
+            "/commercial-policy",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "PUT",
+                "Access-Control-Request-Headers": "authorization,content-type,x-workspace-id",
+            },
+        )
         blocked = client.options(
             "/auth/me",
             headers={
@@ -154,6 +162,8 @@ class ApiTests(unittest.TestCase):
         )
 
         self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(allowed_policy_update.status_code, 200)
+        self.assertIn("PUT", allowed_policy_update.headers.get("access-control-allow-methods", ""))
         self.assertEqual(allowed.headers.get("access-control-allow-origin"), "http://localhost:5173")
         self.assertNotIn("access-control-allow-origin", blocked.headers)
 

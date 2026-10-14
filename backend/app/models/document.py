@@ -17,8 +17,10 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import relationship
 
 from backend.app.models.base import Base
+from backend.app.models.identity import User
 
 
 class DocumentEntity(Base):
@@ -46,6 +48,7 @@ class DocumentEntity(Base):
             name="final_status_valid",
         ),
         Index("ix_documents_workspace_uploaded_at", "workspace_id", "uploaded_at"),
+        Index("ix_documents_workspace_assignee", "workspace_id", "assignee_user_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -53,6 +56,13 @@ class DocumentEntity(Base):
         ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False
     )
     purchase_order_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    assignee_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
+    assigned_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
+    assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     content_type: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -82,6 +92,8 @@ class DocumentEntity(Base):
     pdf_warnings: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     validation_result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     final_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    assignee: Mapped[User | None] = relationship("User", foreign_keys=[assignee_user_id], lazy="joined")
+    assigned_by: Mapped[User | None] = relationship("User", foreign_keys=[assigned_by_user_id], lazy="joined")
 
 
 class DocumentReviewRevisionEntity(Base):
@@ -149,7 +161,7 @@ class DocumentAuditEventEntity(Base):
         ),
         CheckConstraint(
             "event_type IN ('review', 'correction', 'approval', 'rejection', "
-            "'erp_submission', 'erp_attempt', 'erp_success', 'erp_failure')",
+            "'erp_submission', 'erp_attempt', 'erp_success', 'erp_failure', 'assignment')",
             name="document_audit_event_type_valid",
         ),
         Index("ix_document_audit_document_created", "document_id", "created_at"),

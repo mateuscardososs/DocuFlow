@@ -8,8 +8,14 @@ from backend.app.models.document import (
     DocumentReviewRevisionEntity,
 )
 from backend.app.models.erp_submission import ERPSubmissionEntity
+from backend.app.models.commercial_policy import WorkspaceCommercialPolicyEntity
 from backend.app.models.identity import User, Workspace, WorkspaceMembership
-from backend.app.models.purchase_order import PurchaseOrderEntity, PurchaseOrderItem, Supplier
+from backend.app.models.purchase_order import (
+    PurchaseOrderEntity,
+    PurchaseOrderImportAuditEntity,
+    PurchaseOrderItem,
+    Supplier,
+)
 
 __all__ = [
     "Base",
@@ -21,7 +27,9 @@ __all__ = [
     "DocumentApprovalEntity",
     "DocumentAuditEventEntity",
     "ERPSubmissionEntity",
+    "WorkspaceCommercialPolicyEntity",
     "Supplier",
     "PurchaseOrderEntity",
+    "PurchaseOrderImportAuditEntity",
     "PurchaseOrderItem",
 ]

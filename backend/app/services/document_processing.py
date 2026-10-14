@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Literal
 
+from backend.app.commercial_policy import CommercialPolicy
 from backend.app.schemas import PurchaseOrder, ReferenceDocument
 from backend.app.services.document_text_extractor import (
     DocumentTextExtractor,
@@ -53,8 +54,11 @@ class DocumentProcessingService:
         order: PurchaseOrder,
         *,
         content_type: str = "application/pdf",
+        commercial_policy: CommercialPolicy | None = None,
     ) -> DocumentProcessingResult:
-        result, _ = self.process_with_pages(pdf_bytes, order, content_type=content_type)
+        result, _ = self.process_with_pages(
+            pdf_bytes, order, content_type=content_type, commercial_policy=commercial_policy
+        )
         return result
 
     def process_with_pages(
@@ -63,6 +67,7 @@ class DocumentProcessingService:
         order: PurchaseOrder,
         *,
         content_type: str = "application/pdf",
+        commercial_policy: CommercialPolicy | None = None,
     ) -> tuple[DocumentProcessingResult, list[PageText]]:
         extraction_result = self.text_extractor.extract(pdf_bytes, content_type)
         page_texts = {page.number: page.text for page in extraction_result.pages}
@@ -71,7 +76,9 @@ class DocumentProcessingService:
             self.provider,
             config=self.config.extraction,
         ).extract(extraction_result.pages)
-        validation = validate_document(document, order, page_texts)
+        validation = validate_document(
+            document, order, page_texts, commercial_policy=commercial_policy
+        )
 
         result = DocumentProcessingResult(
             document=document,

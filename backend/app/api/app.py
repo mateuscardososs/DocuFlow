@@ -1,18 +1,24 @@
 """Aplicação HTTP fina sobre os serviços existentes do DocuFlow."""
 
+from datetime import date
 import os
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.auth import AuthSettings, AuthenticatedUser, AuthenticationService
+from backend.app.commercial_policy import CommercialPolicy
+from backend.app.commercial_policy_schemas import CommercialPolicyUpdate, CommercialPolicyView
 from backend.app.document_schemas import (
     DocumentAnalysisResponse,
     DocumentApprovalView,
+    DocumentAssignmentRequest,
+    DocumentAssignmentView,
     DocumentAuditEventView,
     DocumentDetail,
     DocumentReviewResponse,
@@ -22,16 +28,34 @@ from backend.app.document_schemas import (
     ReviewCorrectionRequest,
     ReviewDecisionRequest,
     ReviewRejectionRequest,
+    WorkspaceMemberView,
+)
+from backend.app.dashboard_schemas import WorkspaceDashboard
+from backend.app.purchase_order_import_schemas import (
+    PurchaseOrderImportConfirmation,
+    PurchaseOrderImportPreview,
 )
 from backend.app.db import create_database
 from backend.app.integrations.ollama_extraction import OllamaConfig, OllamaExtractionProvider
 from backend.app.models.document import DocumentEntity
+from backend.app.models.commercial_policy import WorkspaceCommercialPolicyEntity
 from backend.app.models.erp_submission import ERPSubmissionEntity
+from backend.app.models.identity import User, WorkspaceMembership
 from backend.app.repositories.purchase_orders import (
     PurchaseOrderRepository,
     SqlAlchemyPurchaseOrderRepository,
 )
-from backend.app.repositories.documents import DocumentRepository, SqlAlchemyDocumentRepository
+from backend.app.repositories.documents import (
+    DocumentAssigneeNotFound,
+    DocumentRepository,
+    SqlAlchemyDocumentRepository,
+)
+from backend.app.repositories.dashboard import SqlAlchemyDashboardRepository
+from backend.app.repositories.commercial_policies import (
+    PolicyVersionConflict,
+    PolicyWorkspaceNotFound,
+    SqlAlchemyCommercialPolicyRepository,
+)
 from backend.app.repositories.erp_submissions import SqlAlchemyERPSubmissionRepository
 from backend.app.services.document_lifecycle import (
     DocumentAttemptError,
@@ -65,6 +89,13 @@ from backend.app.services.erp_submission import (
     ERPSubmissionService,
 )
 from backend.app.services.pdf_text_extractor import DEFAULT_MAX_BYTES
+from backend.app.services.purchase_order_csv_import import (
+    CSV_MAX_BYTES,
+    PurchaseOrderCsvError,
+    PurchaseOrderCsvImportService,
+    PurchaseOrderImportConflict,
+    PurchaseOrderImportPersistenceError,
+)
 from backend.app.services.structured_extraction import ExtractionProvider
 from backend.app.schemas import AccessToken, AuthenticatedUserProfile, ReferenceDocument
 from backend.app.validation import ValidationReport
@@ -122,12 +153,15 @@ def create_app(
     )
     document_review = DocumentReviewService(document_repository, order_repository)
     erp_submission_repository = SqlAlchemyERPSubmissionRepository(session_factory)
+    dashboard_repository = SqlAlchemyDashboardRepository(session_factory)
+    commercial_policy_repository = SqlAlchemyCommercialPolicyRepository(session_factory)
     if erp_submission_queue is None:
         erp_submission_queue = RQERPSubmissionQueue(ERPQueueConfig.from_environment())
     erp_submission = ERPSubmissionService(
         erp_submission_repository,
         erp_submission_queue,
     )
+    purchase_order_import = PurchaseOrderCsvImportService(order_repository)
     oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
     app = FastAPI(title="DocuFlow API", version="0.1.0")
@@ -138,7 +172,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=[frontend_origin],
         allow_credentials=False,
-        allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Workspace-ID", "Accept"],
     )
     app.state.document_processing_service = document_processing_service
@@ -149,8 +183,11 @@ def create_app(
     app.state.document_lifecycle = document_lifecycle
     app.state.document_review = document_review
     app.state.erp_submission_repository = erp_submission_repository
+    app.state.dashboard_repository = dashboard_repository
+    app.state.commercial_policy_repository = commercial_policy_repository
     app.state.erp_submission_queue = erp_submission_queue
     app.state.erp_submission = erp_submission
+    app.state.purchase_order_import = purchase_order_import
     app.state.authentication = authentication
     app.state.max_upload_bytes = max_upload_bytes
     app.state.database_engine = database.engine if database is not None else None
@@ -168,6 +205,68 @@ def create_app(
                 headers={"WWW-Authenticate": "Bearer"},
             )
         return user
+
+    @app.post(
+        "/purchase-orders/import/preview",
+        response_model=PurchaseOrderImportPreview,
+    )
+    async def preview_purchase_order_import(
+        file: UploadFile = File(...),
+        user: AuthenticatedUser = Depends(current_user),
+        workspace_id: int = Header(alias="X-Workspace-ID"),
+    ) -> PurchaseOrderImportPreview:
+        _require_document_role(authentication, user, workspace_id, "operator")
+        content = await _read_csv_upload(file)
+        try:
+            return purchase_order_import.preview(content, workspace_id)
+        except PurchaseOrderCsvError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from None
+        except SQLAlchemyError:
+            raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
+
+    @app.post(
+        "/purchase-orders/import/confirm",
+        response_model=PurchaseOrderImportConfirmation,
+    )
+    async def confirm_purchase_order_import(
+        file: UploadFile = File(...),
+        user: AuthenticatedUser = Depends(current_user),
+        workspace_id: int = Header(alias="X-Workspace-ID"),
+    ) -> PurchaseOrderImportConfirmation:
+        _require_document_role(authentication, user, workspace_id, "operator")
+        content = await _read_csv_upload(file)
+        try:
+            parsed, preview = purchase_order_import.analyze(content, workspace_id)
+            imported, ignored = order_repository.import_orders(
+                [candidate.order for candidate in parsed.orders],
+                workspace_id=workspace_id,
+                actor_user_id=user.id,
+                total_rows=parsed.total_rows,
+                duplicate_references={
+                    order.reference
+                    for order in preview.orders
+                    if order.outcome == "duplicate"
+                },
+                error_count=len(preview.errors),
+            )
+            return PurchaseOrderImportConfirmation(
+                total_rows=parsed.total_rows,
+                valid_rows=parsed.valid_rows,
+                imported=imported,
+                ignored_duplicates=ignored,
+                errors=preview.errors,
+            )
+        except PurchaseOrderCsvError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from None
+        except PurchaseOrderImportConflict as error:
+            raise HTTPException(status_code=409, detail=str(error)) from None
+        except PurchaseOrderImportPersistenceError:
+            raise HTTPException(
+                status_code=503,
+                detail="Não foi possível gravar os pedidos. Nenhum pedido desta confirmação foi alterado.",
+            ) from None
+        except SQLAlchemyError:
+            raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
 
     @app.post("/auth/token", response_model=AccessToken)
     def issue_token(form: OAuth2PasswordRequestForm = Depends()) -> AccessToken:
@@ -191,6 +290,87 @@ def create_app(
                 headers={"WWW-Authenticate": "Bearer"},
             )
         return profile
+
+    @app.get("/commercial-policy", response_model=CommercialPolicyView)
+    def get_commercial_policy(
+        user: AuthenticatedUser = Depends(current_user),
+        workspace_id: int = Header(alias="X-Workspace-ID"),
+    ) -> CommercialPolicyView:
+        _require_document_role(authentication, user, workspace_id, "operator")
+        try:
+            record = commercial_policy_repository.current_record(workspace_id)
+        except SQLAlchemyError:
+            raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
+        if record is None:
+            default = CommercialPolicy.defaults()
+            return CommercialPolicyView(
+                version=default.version,
+                default_total_tolerance=default.default_total_tolerance,
+                currency_tolerances={},
+                created_by_user_id=None,
+                created_by_email=None,
+                created_at=None,
+            )
+        return _commercial_policy_view(record)
+
+    @app.get("/commercial-policy/history", response_model=list[CommercialPolicyView])
+    def get_commercial_policy_history(
+        user: AuthenticatedUser = Depends(current_user),
+        workspace_id: int = Header(alias="X-Workspace-ID"),
+    ) -> list[CommercialPolicyView]:
+        _require_document_role(authentication, user, workspace_id, "operator")
+        try:
+            records = commercial_policy_repository.history(workspace_id)
+        except SQLAlchemyError:
+            raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
+        return [_commercial_policy_view(record) for record in records]
+
+    @app.put("/commercial-policy", response_model=CommercialPolicyView)
+    def update_commercial_policy(
+        request: CommercialPolicyUpdate,
+        user: AuthenticatedUser = Depends(current_user),
+        workspace_id: int = Header(alias="X-Workspace-ID"),
+    ) -> CommercialPolicyView:
+        _require_document_role(authentication, user, workspace_id, "operator")
+        try:
+            record = commercial_policy_repository.update(
+                workspace_id=workspace_id,
+                expected_version=request.expected_version,
+                actor_user_id=user.id,
+                currency_tolerances=request.currency_tolerances,
+            )
+        except PolicyWorkspaceNotFound:
+            raise HTTPException(status_code=404, detail="Workspace não encontrado.") from None
+        except PolicyVersionConflict:
+            raise HTTPException(
+                status_code=409,
+                detail="A política mudou desde a leitura. Atualize os dados antes de salvar.",
+            ) from None
+        except SQLAlchemyError:
+            raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
+        return _commercial_policy_view(record)
+
+    @app.get("/dashboard", response_model=WorkspaceDashboard)
+    def workspace_dashboard(
+        start_date: date = Query(...),
+        end_date: date = Query(...),
+        user: AuthenticatedUser = Depends(current_user),
+        workspace_id: int = Header(alias="X-Workspace-ID"),
+    ) -> WorkspaceDashboard:
+        _require_workspace_member(authentication, user, workspace_id)
+        if end_date < start_date:
+            raise HTTPException(status_code=422, detail="A data final deve ser igual ou posterior à inicial.")
+        if (end_date - start_date).days > 365:
+            raise HTTPException(status_code=422, detail="O período máximo do painel é de 366 dias.")
+        try:
+            summary = dashboard_repository.summarize(workspace_id, start_date, end_date)
+        except SQLAlchemyError:
+            raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
+        return WorkspaceDashboard(
+            start_date=start_date,
+            end_date=end_date,
+            **summary,
+        )
 
     @app.post("/documents/analyze", response_model=DocumentAnalysisResponse, status_code=202)
     async def analyze_document(
@@ -298,11 +478,19 @@ def create_app(
         workspace_id: int = Header(alias="X-Workspace-ID"),
         limit: int = Query(default=50, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
+        assigned_to_me: bool = False,
+        unassigned: bool = False,
     ) -> list[DocumentSummary]:
         _require_workspace_member(authentication, user, workspace_id)
+        if assigned_to_me and unassigned:
+            raise HTTPException(status_code=422, detail="Escolha apenas um filtro de responsável.")
         try:
             records = document_repository.list_for_workspace(
-                workspace_id, limit=limit, offset=offset
+                workspace_id,
+                limit=limit,
+                offset=offset,
+                assignee_user_id=user.id if assigned_to_me else None,
+                unassigned=unassigned,
             )
             order_display_fields = order_repository.get_display_fields_by_ids(
                 workspace_id, {record.purchase_order_id for record in records}
@@ -313,6 +501,32 @@ def create_app(
             _document_summary(record, order_display_fields.get(record.purchase_order_id))
             for record in records
         ]
+
+    @app.get("/workspaces/{workspace_id}/members", response_model=list[WorkspaceMemberView])
+    def list_workspace_members(
+        workspace_id: int,
+        user: AuthenticatedUser = Depends(current_user),
+    ) -> list[WorkspaceMemberView]:
+        _require_workspace_member(authentication, user, workspace_id)
+        try:
+            with session_factory() as session:
+                rows = session.execute(
+                    select(User.id, User.email, WorkspaceMembership.role)
+                    .join(WorkspaceMembership, WorkspaceMembership.user_id == User.id)
+                    .where(
+                        WorkspaceMembership.workspace_id == workspace_id,
+                        User.is_active.is_(True),
+                    )
+                    .order_by(User.email, WorkspaceMembership.role)
+                ).all()
+        except SQLAlchemyError:
+            raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
+        members: dict[int, WorkspaceMemberView] = {}
+        for member_id, email, role in rows:
+            if member_id not in members:
+                members[member_id] = WorkspaceMemberView(id=member_id, email=email, roles=[])
+            members[member_id].roles.append(role)
+        return list(members.values())
 
     @app.get("/documents/{document_id}", response_model=DocumentDetail)
     def get_document(
@@ -335,9 +549,36 @@ def create_app(
         except SQLAlchemyError:
             raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
 
+    @app.put("/documents/{document_id}/assignment", response_model=DocumentAssignmentView)
+    def assign_document(
+        document_id: int,
+        request: DocumentAssignmentRequest,
+        user: AuthenticatedUser = Depends(current_user),
+        workspace_id: int = Header(alias="X-Workspace-ID"),
+    ) -> DocumentAssignmentView:
+        _require_document_role(authentication, user, workspace_id, "operator")
+        try:
+            record = document_repository.assign(
+                document_id=document_id,
+                workspace_id=workspace_id,
+                assignee_user_id=request.assignee_user_id,
+                actor_user_id=user.id,
+            )
+            if record is None:
+                raise HTTPException(status_code=404, detail="Documento não encontrado.")
+            return _document_assignment_view(record)
+        except DocumentAssigneeNotFound:
+            raise HTTPException(
+                status_code=404,
+                detail="Membro ativo não encontrado neste workspace.",
+            ) from None
+        except SQLAlchemyError:
+            raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
+
     @app.get("/documents/{document_id}/download")
     def download_document(
         document_id: int,
+        inline: bool = False,
         user: AuthenticatedUser = Depends(current_user),
         workspace_id: int = Header(alias="X-Workspace-ID"),
     ) -> FileResponse:
@@ -354,7 +595,12 @@ def create_app(
             raise HTTPException(status_code=404, detail="Arquivo não encontrado.") from None
         if not path.is_file():
             raise HTTPException(status_code=404, detail="Arquivo não encontrado.")
-        return FileResponse(path, filename=record.original_filename, media_type=record.content_type)
+        return FileResponse(
+            path,
+            filename=record.original_filename,
+            media_type=record.content_type,
+            content_disposition_type="inline" if inline else "attachment",
+        )
 
     @app.patch("/documents/{document_id}/review", response_model=DocumentReviewResponse)
     def correct_document(
@@ -522,6 +768,23 @@ def _get_upload_limit(request: Request) -> int:
     return request.app.state.max_upload_bytes
 
 
+async def _read_csv_upload(file: UploadFile) -> bytes:
+    media_type = (file.content_type or "").split(";", 1)[0].strip().lower()
+    if media_type not in {"text/csv", "application/csv", "application/vnd.ms-excel", "text/plain", "application/octet-stream", ""}:
+        await file.close()
+        raise HTTPException(status_code=415, detail="Envie um arquivo CSV em UTF-8.")
+    if file.size is not None and file.size > CSV_MAX_BYTES:
+        await file.close()
+        raise HTTPException(status_code=413, detail="O arquivo CSV excede o limite de 5 MB.")
+    try:
+        content = await file.read(CSV_MAX_BYTES + 1)
+    finally:
+        await file.close()
+    if len(content) > CSV_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="O arquivo CSV excede o limite de 5 MB.")
+    return content
+
+
 def _size_limit_message(max_bytes: int) -> str:
     limit_mb = max_bytes / (1024 * 1024)
     return f"O arquivo excede o limite configurado de {limit_mb:g} MB."
@@ -569,6 +832,12 @@ def _document_summary(
         id=record.id,
         workspace_id=record.workspace_id,
         purchase_order_id=record.purchase_order_id,
+        assignee_user_id=record.assignee_user_id,
+        assignee_email=record.assignee.email if record.assignee is not None else None,
+        assigned_by_user_id=record.assigned_by_user_id,
+        assigned_by_email=record.assigned_by.email if record.assigned_by is not None else None,
+        assigned_at=record.assigned_at,
+        assignment_status="assigned" if record.assignee_user_id is not None else "unassigned",
         purchase_order_reference=(order_display_fields or {}).get("reference"),
         supplier_name=(order_display_fields or {}).get("supplier_name"),
         original_filename=record.original_filename,
@@ -581,6 +850,18 @@ def _document_summary(
         review_version=record.review_version,
         processing_error=record.processing_error,
         final_status=record.final_status,
+    )
+
+
+def _document_assignment_view(record: DocumentEntity) -> DocumentAssignmentView:
+    return DocumentAssignmentView(
+        document_id=record.id,
+        assignee_user_id=record.assignee_user_id,
+        assignee_email=record.assignee.email if record.assignee is not None else None,
+        assigned_by_user_id=record.assigned_by_user_id,
+        assigned_by_email=record.assigned_by.email if record.assigned_by is not None else None,
+        assigned_at=record.assigned_at,
+        assignment_status="assigned" if record.assignee_user_id is not None else "unassigned",
     )
 
 
@@ -714,6 +995,17 @@ def _erp_submission_view(record: ERPSubmissionEntity) -> ERPSubmissionView:
         failure_message=record.failure_message,
         requested_at=record.requested_at,
         updated_at=record.updated_at,
+    )
+
+
+def _commercial_policy_view(record: WorkspaceCommercialPolicyEntity) -> CommercialPolicyView:
+    return CommercialPolicyView(
+        version=record.version,
+        default_total_tolerance="0.01",
+        currency_tolerances=record.currency_tolerances,
+        created_by_user_id=record.created_by_user_id,
+        created_by_email=record.author.email,
+        created_at=record.created_at,
     )
 
 

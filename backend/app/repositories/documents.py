@@ -13,7 +13,12 @@ from backend.app.models.document import (
     DocumentEntity,
     DocumentReviewRevisionEntity,
 )
+from backend.app.models.identity import User, WorkspaceMembership
 from backend.app.services.document_processing import DocumentProcessingResult
+
+
+class DocumentAssigneeNotFound(Exception):
+    """O usuário não é membro ativo do workspace do documento."""
 
 
 class DocumentRepository(Protocol):
@@ -31,8 +36,13 @@ class DocumentRepository(Protocol):
     def get_by_id(self, document_id: int, workspace_id: int) -> DocumentEntity | None: ...
     def find_by_hash(self, sha256: str, workspace_id: int) -> DocumentEntity | None: ...
     def list_for_workspace(
-        self, workspace_id: int, *, limit: int, offset: int
+        self, workspace_id: int, *, limit: int, offset: int,
+        assignee_user_id: int | None = None, unassigned: bool = False,
     ) -> list[DocumentEntity]: ...
+    def assign(
+        self, *, document_id: int, workspace_id: int, assignee_user_id: int | None,
+        actor_user_id: int,
+    ) -> DocumentEntity | None: ...
     def save_result(
         self,
         *,
@@ -160,18 +170,80 @@ class SqlAlchemyDocumentRepository:
             )
 
     def list_for_workspace(
-        self, workspace_id: int, *, limit: int, offset: int
+        self, workspace_id: int, *, limit: int, offset: int,
+        assignee_user_id: int | None = None, unassigned: bool = False,
     ) -> list[DocumentEntity]:
+        query = select(DocumentEntity).where(DocumentEntity.workspace_id == workspace_id)
+        if assignee_user_id is not None:
+            query = query.where(DocumentEntity.assignee_user_id == assignee_user_id)
+        if unassigned:
+            query = query.where(DocumentEntity.assignee_user_id.is_(None))
         with self._session_factory() as session:
             return list(
                 session.scalars(
-                    select(DocumentEntity)
-                    .where(DocumentEntity.workspace_id == workspace_id)
+                    query
                     .order_by(DocumentEntity.uploaded_at.desc(), DocumentEntity.id.desc())
                     .limit(limit)
                     .offset(offset)
                 ).all()
             )
+
+    def assign(
+        self,
+        *,
+        document_id: int,
+        workspace_id: int,
+        assignee_user_id: int | None,
+        actor_user_id: int,
+    ) -> DocumentEntity | None:
+        with self._session_factory.begin() as session:
+            document = session.scalar(
+                select(DocumentEntity)
+                .where(
+                    DocumentEntity.id == document_id,
+                    DocumentEntity.workspace_id == workspace_id,
+                )
+                .with_for_update(of=DocumentEntity)
+            )
+            if document is None:
+                return None
+            if assignee_user_id is not None:
+                member_id = session.scalar(
+                    select(User.id)
+                    .join(WorkspaceMembership, WorkspaceMembership.user_id == User.id)
+                    .where(
+                        User.id == assignee_user_id,
+                        User.is_active.is_(True),
+                        WorkspaceMembership.workspace_id == workspace_id,
+                    )
+                    .limit(1)
+                    .with_for_update(of=User)
+                )
+                if member_id is None:
+                    raise DocumentAssigneeNotFound
+            if document.assignee_user_id == assignee_user_id:
+                return document
+
+            previous_assignee_user_id = document.assignee_user_id
+            now = datetime.now(timezone.utc)
+            document.assignee_user_id = assignee_user_id
+            document.assignee = session.get(User, assignee_user_id) if assignee_user_id else None
+            document.assigned_by_user_id = actor_user_id
+            document.assigned_by = session.get(User, actor_user_id)
+            document.assigned_at = now
+            session.add(DocumentAuditEventEntity(
+                document_id=document.id,
+                workspace_id=workspace_id,
+                event_type="assignment",
+                version=document.review_version,
+                actor_user_id=actor_user_id,
+                justification=None,
+                details={
+                    "previous_assignee_user_id": previous_assignee_user_id,
+                    "assignee_user_id": assignee_user_id,
+                },
+            ))
+        return document
 
     def save_result(
         self,
@@ -192,7 +264,7 @@ class SqlAlchemyDocumentRepository:
                     DocumentEntity.review_status != "approved",
                     *([DocumentEntity.active_job_id == job_id] if job_id else []),
                 )
-                .with_for_update()
+                .with_for_update(of=DocumentEntity)
             )
             if document is None:
                 raise RuntimeError("O documento não está elegível para salvar o resultado.")
@@ -233,7 +305,7 @@ class SqlAlchemyDocumentRepository:
                     DocumentEntity.processing_status == "queued",
                     DocumentEntity.review_status != "approved",
                 )
-                .with_for_update()
+                .with_for_update(of=DocumentEntity)
             )
             if document is not None:
                 document.processing_status = "failed"
@@ -247,7 +319,7 @@ class SqlAlchemyDocumentRepository:
                     DocumentEntity.id == document_id,
                     DocumentEntity.workspace_id == workspace_id,
                 )
-                .with_for_update()
+                .with_for_update(of=DocumentEntity)
             )
             if document is None or document.processing_status != "queued":
                 return False
@@ -262,7 +334,7 @@ class SqlAlchemyDocumentRepository:
                     DocumentEntity.id == document_id,
                     DocumentEntity.workspace_id == workspace_id,
                 )
-                .with_for_update()
+                .with_for_update(of=DocumentEntity)
             )
             if (
                 document is None
@@ -284,7 +356,7 @@ class SqlAlchemyDocumentRepository:
             document = session.scalar(
                 select(DocumentEntity)
                 .where(DocumentEntity.id == document_id)
-                .with_for_update()
+                .with_for_update(of=DocumentEntity)
             )
             if (
                 document is None
@@ -311,7 +383,7 @@ class SqlAlchemyDocumentRepository:
                     DocumentEntity.processing_status == "processing",
                     DocumentEntity.review_status != "approved",
                 )
-                .with_for_update()
+                .with_for_update(of=DocumentEntity)
             )
             if document is not None:
                 document.processing_error = safe_message
@@ -328,7 +400,7 @@ class SqlAlchemyDocumentRepository:
                     DocumentEntity.processing_status == "processing",
                     DocumentEntity.review_status != "approved",
                 )
-                .with_for_update()
+                .with_for_update(of=DocumentEntity)
             )
             if document is not None:
                 document.processing_status = "failed"
@@ -341,7 +413,7 @@ class SqlAlchemyDocumentRepository:
             document = session.scalar(
                 select(DocumentEntity)
                 .where(DocumentEntity.id == document_id)
-                .with_for_update()
+                .with_for_update(of=DocumentEntity)
             )
             if (
                 document is None
@@ -381,7 +453,7 @@ class SqlAlchemyDocumentRepository:
             document = session.scalar(
                 select(DocumentEntity)
                 .where(DocumentEntity.id == document_id)
-                .with_for_update()
+                .with_for_update(of=DocumentEntity)
             )
             if (
                 document is None
@@ -424,7 +496,7 @@ class SqlAlchemyDocumentRepository:
                     DocumentEntity.id == document_id,
                     DocumentEntity.workspace_id == workspace_id,
                 )
-                .with_for_update()
+                .with_for_update(of=DocumentEntity)
             )
             if document is None:
                 raise DocumentReviewNotFound
@@ -491,7 +563,7 @@ class SqlAlchemyDocumentRepository:
                     DocumentEntity.id == document_id,
                     DocumentEntity.workspace_id == workspace_id,
                 )
-                .with_for_update()
+                .with_for_update(of=DocumentEntity)
             )
             if document is None:
                 raise DocumentReviewNotFound
@@ -553,7 +625,7 @@ class SqlAlchemyDocumentRepository:
                     DocumentEntity.id == document_id,
                     DocumentEntity.workspace_id == workspace_id,
                 )
-                .with_for_update()
+                .with_for_update(of=DocumentEntity)
             )
             if document is None:
                 raise DocumentReviewNotFound

@@ -2,6 +2,8 @@
 
 from backend.app.repositories.documents import DocumentRepository
 from backend.app.repositories.purchase_orders import PurchaseOrderRepository
+from backend.app.repositories.commercial_policies import CommercialPolicyRepository
+from backend.app.commercial_policy import CommercialPolicy
 from backend.app.services.document_processing import DocumentProcessingService
 from backend.app.services.document_queue import DocumentQueueConfig
 from backend.app.services.document_storage import DocumentFileStorage
@@ -18,11 +20,13 @@ class DocumentWorkerService:
         storage: DocumentFileStorage,
         processing_service: DocumentProcessingService,
         config: DocumentQueueConfig | None = None,
+        commercial_policy_repository: CommercialPolicyRepository | None = None,
     ) -> None:
         self.documents = document_repository
         self.orders = order_repository
         self.storage = storage
         self.processing = processing_service
+        self.commercial_policies = commercial_policy_repository
         self.config = config or DocumentQueueConfig(
             redis_url="redis://unused", max_attempts=3
         )
@@ -41,8 +45,16 @@ class DocumentWorkerService:
             if order is None:
                 raise RuntimeError("Pedido não disponível")
             pdf_bytes = self.storage.path_for(document.storage_key).read_bytes()
+            policy = (
+                self.commercial_policies.current(document.workspace_id)
+                if self.commercial_policies is not None
+                else CommercialPolicy.defaults()
+            )
             result, pages = self.processing.process_with_pages(
-                pdf_bytes, order, content_type=document.content_type
+                pdf_bytes,
+                order,
+                content_type=document.content_type,
+                commercial_policy=policy,
             )
             self.documents.save_result(
                 document_id=document.id,

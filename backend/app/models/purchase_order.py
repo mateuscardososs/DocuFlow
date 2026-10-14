@@ -1,6 +1,7 @@
 """Entidades persistidas de fornecedores e pedidos de compra."""
 
 from decimal import Decimal
+from datetime import datetime
 
 from sqlalchemy import (
     CheckConstraint,
@@ -8,7 +9,10 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Numeric,
     String,
+    DateTime,
+    Integer,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -88,3 +92,35 @@ class PurchaseOrderItem(Base):
     line_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
 
     purchase_order: Mapped[PurchaseOrderEntity] = relationship(back_populates="items")
+
+
+class PurchaseOrderImportAuditEntity(Base):
+    """Registro resumido e append-only de cada confirmação de importação."""
+
+    __tablename__ = "purchase_order_import_audits"
+    __table_args__ = (
+        CheckConstraint(
+            "outcome IN ('succeeded', 'partial', 'conflict', 'failed')",
+            name="purchase_order_import_outcome_valid",
+        ),
+        CheckConstraint("total_rows >= 0", name="purchase_order_import_rows_nonnegative"),
+        CheckConstraint("imported_orders >= 0", name="purchase_order_import_count_nonnegative"),
+        CheckConstraint("ignored_duplicates >= 0", name="purchase_order_import_duplicates_nonnegative"),
+        CheckConstraint("error_count >= 0", name="purchase_order_import_errors_nonnegative"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False
+    )
+    actor_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False)
+    total_rows: Mapped[int] = mapped_column(Integer, nullable=False)
+    imported_orders: Mapped[int] = mapped_column(Integer, nullable=False)
+    ignored_duplicates: Mapped[int] = mapped_column(Integer, nullable=False)
+    error_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

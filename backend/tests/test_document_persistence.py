@@ -7,6 +7,7 @@ from decimal import Decimal
 from hashlib import sha256
 from pathlib import Path
 from unittest.mock import Mock
+from uuid import uuid4
 
 from PIL import Image
 
@@ -17,7 +18,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.auth import AuthSettings, hash_password
 from backend.app.models.base import Base
-from backend.app.models.document import DocumentEntity
+from backend.app.models.document import DocumentAuditEventEntity, DocumentEntity
 from backend.app.models.identity import User, Workspace, WorkspaceMembership
 from backend.app.models.purchase_order import PurchaseOrderEntity, PurchaseOrderItem, Supplier
 from backend.app.repositories.documents import SqlAlchemyDocumentRepository
@@ -146,6 +147,22 @@ class DocumentPersistenceApiTests(unittest.TestCase):
     def _document(self, document_id):
         with self.session_factory() as session:
             return session.get(DocumentEntity, document_id)
+
+    def _create_member(self, *, role="operator", workspace_id=None, is_active=True):
+        with self.session_factory.begin() as session:
+            member = User(
+                email=f"member-{uuid4().hex}@example.test",
+                password_hash=hash_password("test-password"),
+                is_active=is_active,
+            )
+            session.add(member)
+            session.flush()
+            session.add(WorkspaceMembership(
+                user_id=member.id,
+                workspace_id=workspace_id or self.workspace_id,
+                role=role,
+            ))
+            return member.id
 
     def test_storage_rejects_paths_outside_private_root(self):
         storage = DocumentFileStorage(Path(self.temp_dir.name))
@@ -301,6 +318,17 @@ class DocumentPersistenceApiTests(unittest.TestCase):
         self.assertNotIn("storage_key", detail.json())
         self.assertEqual(download.status_code, 200)
         self.assertEqual(download.content, content)
+        inline_preview = self.client.get(f"/documents/{document_id}/download?inline=true")
+        self.assertIn("inline", inline_preview.headers.get("content-disposition", ""))
+
+        unauthenticated_client = TestClient(
+            self.app,
+            headers={"X-Workspace-ID": str(self.workspace_id)},
+        )
+        unauthenticated = unauthenticated_client.get(f"/documents/{document_id}/download")
+        unauthenticated_client.close()
+        self.assertEqual(unauthenticated.status_code, 401)
+        self.assertNotIn("invoice.pdf", unauthenticated.text)
 
         with self.session_factory.begin() as session:
             other_workspace = Workspace(slug="other", name="Outro")
@@ -330,6 +358,147 @@ class DocumentPersistenceApiTests(unittest.TestCase):
         self.assertEqual(branch_listing.status_code, 200)
         self.assertEqual(branch_listing.json(), [])
         self.assertEqual(branch_detail.status_code, 404)
+
+    def test_operator_assigns_document_and_assignment_is_visible_and_audited(self):
+        document_id = self._upload().json()["document_id"]
+        assignee_id = self._create_member()
+
+        assigned = self.client.put(
+            f"/documents/{document_id}/assignment",
+            json={"assignee_user_id": assignee_id},
+        )
+
+        self.assertEqual(assigned.status_code, 200, assigned.text)
+        self.assertEqual(assigned.json()["assignee_user_id"], assignee_id)
+        self.assertEqual(assigned.json()["assignee_email"], self._member_email(assignee_id))
+        self.assertEqual(assigned.json()["assigned_by_user_id"], self.user_id)
+        self.assertIsNotNone(assigned.json()["assigned_at"])
+        listed = self.client.get("/documents").json()
+        self.assertEqual(listed[0]["assignee_user_id"], assignee_id)
+        detail = self.client.get(f"/documents/{document_id}").json()
+        self.assertEqual(detail["assignee_email"], self._member_email(assignee_id))
+        events = self.client.get(f"/documents/{document_id}/audit").json()
+        assignment_events = [event for event in events if event["event_type"] == "assignment"]
+        self.assertEqual(len(assignment_events), 1)
+        self.assertEqual(assignment_events[0]["actor_user_id"], self.user_id)
+        self.assertEqual(assignment_events[0]["details"], {
+            "previous_assignee_user_id": None,
+            "assignee_user_id": assignee_id,
+        })
+
+    def test_assignment_can_be_changed_and_removed_with_audit_history(self):
+        document_id = self._upload().json()["document_id"]
+        first_id = self._create_member()
+        second_id = self._create_member()
+        path = f"/documents/{document_id}/assignment"
+
+        for assignee_id in (first_id, second_id, None):
+            response = self.client.put(path, json={"assignee_user_id": assignee_id})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["assignee_user_id"], assignee_id)
+            self.assertEqual(response.json()["assignment_status"], "unassigned" if assignee_id is None else "assigned")
+        events = self.client.get(f"/documents/{document_id}/audit").json()
+        self.assertEqual([event["event_type"] for event in events].count("assignment"), 3)
+
+    def test_document_queue_filters_assigned_to_current_user_and_unassigned(self):
+        document_id = self._upload().json()["document_id"]
+        path = f"/documents/{document_id}/assignment"
+        assigned = self.client.put(path, json={"assignee_user_id": self.user_id})
+        self.assertEqual(assigned.status_code, 200)
+        mine = self.client.get("/documents?assigned_to_me=true")
+        self.assertEqual([item["id"] for item in mine.json()], [document_id])
+        self.client.put(path, json={"assignee_user_id": None})
+        unassigned = self.client.get("/documents?unassigned=true")
+        self.assertEqual([item["id"] for item in unassigned.json()], [document_id])
+        invalid = self.client.get("/documents?assigned_to_me=true&unassigned=true")
+        self.assertEqual(invalid.status_code, 422)
+
+    def test_assignment_rejects_unknown_inactive_and_other_workspace_users(self):
+        document_id = self._upload().json()["document_id"]
+        other_workspace_id = self._create_workspace()
+        other_member = self._create_member(workspace_id=other_workspace_id)
+        inactive_member = self._create_member(is_active=False)
+        path = f"/documents/{document_id}/assignment"
+
+        for user_id in (999999, other_member, inactive_member):
+            response = self.client.put(path, json={"assignee_user_id": user_id})
+            self.assertEqual(response.status_code, 404)
+            self.assertIn("membro ativo", response.json()["detail"].lower())
+        self.assertEqual(self.client.get(f"/documents/{document_id}").json()["assignee_user_id"], None)
+
+    def test_workspace_member_list_is_scoped_active_and_groups_both_roles(self):
+        member_id = self._create_member()
+        inactive_id = self._create_member(is_active=False)
+        other_workspace_id = self._create_workspace()
+        foreign_id = self._create_member(workspace_id=other_workspace_id)
+        with self.session_factory.begin() as session:
+            session.add(WorkspaceMembership(
+                user_id=member_id,
+                workspace_id=self.workspace_id,
+                role="approver",
+            ))
+
+        response = self.client.get(f"/workspaces/{self.workspace_id}/members")
+
+        self.assertEqual(response.status_code, 200)
+        members = {item["id"]: item for item in response.json()}
+        self.assertIn(member_id, members)
+        self.assertEqual(members[member_id]["roles"], ["approver", "operator"])
+        self.assertNotIn(inactive_id, members)
+        self.assertNotIn(foreign_id, members)
+
+    def test_approver_without_operator_cannot_assign_document(self):
+        document_id = self._upload().json()["document_id"]
+        assignee_id = self._create_member()
+        approver_id = self._create_member(role="approver")
+        token, _ = self.app.state.authentication.issue_access_token(approver_id)
+        approver_client = TestClient(self.app, headers={
+            "Authorization": f"Bearer {token}",
+            "X-Workspace-ID": str(self.workspace_id),
+        })
+        response = approver_client.put(
+            f"/documents/{document_id}/assignment",
+            json={"assignee_user_id": assignee_id},
+        )
+        approver_client.close()
+        self.assertEqual(response.status_code, 403)
+        self.assertIsNone(self.client.get(f"/documents/{document_id}").json()["assignee_user_id"])
+
+    def test_assignment_does_not_change_review_version_or_block_approval(self):
+        document_id = self._upload().json()["document_id"]
+        assignee_id = self._create_member()
+        with self.session_factory.begin() as session:
+            session.add(WorkspaceMembership(
+                user_id=self.user_id,
+                workspace_id=self.workspace_id,
+                role="approver",
+            ))
+
+        assigned = self.client.put(
+            f"/documents/{document_id}/assignment",
+            json={"assignee_user_id": assignee_id},
+        )
+        approved = self.client.post(
+            f"/documents/{document_id}/approve",
+            json={"expected_version": 1},
+        )
+
+        self.assertEqual(assigned.status_code, 200)
+        self.assertEqual(approved.status_code, 200, approved.text)
+        self.assertEqual(approved.json()["review_status"], "approved")
+        self.assertEqual(approved.json()["review_version"], 1)
+        self.assertIsNotNone(approved.json()["approval"])
+
+    def _member_email(self, user_id):
+        with self.session_factory() as session:
+            return session.get(User, user_id).email
+
+    def _create_workspace(self):
+        with self.session_factory.begin() as session:
+            workspace = Workspace(slug=f"other-{uuid4().hex}", name="Outro")
+            session.add(workspace)
+            session.flush()
+            return workspace.id
 
     def test_listing_requires_workspace_membership(self):
         response = self.client.get("/documents", headers={"X-Workspace-ID": "99999"})
