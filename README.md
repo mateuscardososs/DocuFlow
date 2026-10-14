@@ -38,7 +38,7 @@ As dependências do backend são declaradas em `requirements.txt` e verificadas 
 
 ## Dependências do backend
 
-`pypdf` lê texto nativo de PDFs. Para páginas sem texto utilizável, `pypdfium2` renderiza a página localmente e o executável Tesseract faz OCR; Pillow valida e normaliza PNG/JPEG. O OCR não usa serviços externos e sua saída ainda passa pelas mesmas verificações de evidência e validação comercial. `pypdfium2` 5.14.0 e Pillow 12.3.0 foram instalados no Python 3.14.4 do projeto; os metadados oficiais declaram suporte a Python 3.14 ([pypdfium2 no PyPI](https://pypi.org/project/pypdfium2/), [Pillow no PyPI](https://pypi.org/project/pillow/)). O Tesseract é uma dependência de sistema separada: instale o mecanismo e os dados dos idiomas ([instalação oficial](https://tesseract-ocr.github.io/tessdoc/Installation.html), [dados de idioma](https://tesseract-ocr.github.io/tessdoc/Data-Files.html)). No macOS use `brew install tesseract`; em Debian/Ubuntu use `sudo apt install tesseract-ocr tesseract-ocr-por tesseract-ocr-eng`. A integração usa a CLI documentada pelo Tesseract ([uso da linha de comando](https://tesseract-ocr.github.io/tessdoc/Command-Line-Usage.html)). As demais bibliotecas servem à API, autenticação, PostgreSQL e fila; RQ 2.12.0 e redis-py 8.1.0 também foram instalados e verificados em Python 3.14 ([documentação RQ](https://python-rq.org/docs/), [documentação redis-py](https://redis.readthedocs.io/en/stable/)). Para instalar as dependências e rodar os testes:
+`pypdf` lê texto nativo de PDFs. Para páginas sem texto utilizável, `pypdfium2` renderiza a página localmente e o executável Tesseract faz OCR; Pillow valida e normaliza PNG/JPEG. O OCR não usa serviços externos e sua saída ainda passa pelas mesmas verificações de evidência e validação comercial. `pypdfium2` 5.14.0 e Pillow 12.3.0 foram instalados no Python 3.14.4 do projeto; os metadados oficiais declaram suporte a Python 3.14 ([pypdfium2 no PyPI](https://pypi.org/project/pypdfium2/), [Pillow no PyPI](https://pypi.org/project/pillow/)). O Tesseract é uma dependência de sistema separada: instale o mecanismo e os dados dos idiomas ([instalação oficial](https://tesseract-ocr.github.io/tessdoc/Installation.html), [dados de idioma](https://tesseract-ocr.github.io/tessdoc/Data-Files.html)). O worker RQ roda no host; o Compose atual não constrói uma imagem de aplicação/worker. No macOS instale o mecanismo e todos os dados de idioma com `brew install tesseract tesseract-lang`; em Debian/Ubuntu instale `tesseract-ocr tesseract-ocr-por tesseract-ocr-eng`. A integração usa a CLI documentada pelo Tesseract ([uso da linha de comando](https://tesseract-ocr.github.io/tessdoc/Command-Line-Usage.html)). As demais bibliotecas servem à API, autenticação, PostgreSQL e fila; RQ 2.12.0 e redis-py 8.1.0 também foram instalados e verificados em Python 3.14 ([documentação RQ](https://python-rq.org/docs/), [documentação redis-py](https://redis.readthedocs.io/en/stable/)). Para instalar as dependências Python e rodar os testes:
 
 ```bash
 python3 -m venv .venv
@@ -74,7 +74,22 @@ Depois de uma análise concluída, `review_status` começa como `pending` e `rev
 
 `POST /documents/{id}/reject` exige `approver`, `expected_version` e justificativa não vazia. Aprovações e rejeições só podem ser decididas enquanto o estado está `pending`. Tanto correção quanto aprovação e rejeição exigem vínculo do usuário ao workspace selecionado. Quem tem apenas `approver` não pode corrigir; para executar as duas ações, a associação deve conter ambos os papéis.
 
-`GET /documents/{id}/audit` retorna os eventos de revisão, correção, aprovação e rejeição em ordem cronológica, com versão, autor, horário e justificativa quando aplicável. Os registros de correção, aprovação e auditoria são acrescentados ao histórico; o backend não edita os snapshots antigos. Padrões explícitos de senha/token/chave em formato `campo=valor` e tokens JWT em justificativas são mascarados antes de persistir.
+`GET /documents/{id}/audit` retorna os eventos de revisão, correção, aprovação, rejeição e envio ERP (solicitação, tentativa, sucesso e falha) em ordem cronológica, com versão, autor, horário e justificativa quando aplicável. Os registros de correção, aprovação e auditoria são acrescentados ao histórico; o backend não edita os snapshots antigos. Padrões explícitos de senha/token/chave em formato `campo=valor` e tokens JWT em justificativas são mascarados antes de persistir.
+
+## ERP de demonstração
+
+O envio ao ERP é uma ação separada da aprovação. `POST /documents/{id}/erp-submission` exige token, `X-Workspace-ID`, papel `approver` e JSON `{"expected_version": 1}`. O backend recusa documentos pendentes/rejeitados, sem snapshot ou cuja versão atual não corresponda à versão aprovada. A solicitação é persistida antes de entrar na fila `erp-submissions`; o job RQ contém somente o ID da solicitação. `GET /erp-submissions/{id}` consulta o estado e exige o mesmo papel e workspace. IDs fora do workspace retornam 404.
+
+O worker lê o snapshot imutável em `document_approvals`, nunca a extração nem uma revisão posterior. A tabela `erp_submissions` guarda estado (`queued`, `processing`, `succeeded` ou `failed`), versão aprovada, tentativas, identificador fictício e erro seguro. Solicitação, tentativa, sucesso e falha são eventos append-only visíveis em `GET /documents/{id}/audit`. Falhas podem ser retentadas repetindo o `POST` com a versão aprovada atual; a mesma solicitação e chave idempotente são reutilizadas. Jobs repetidos não reclamam uma solicitação já processada. Se o conteúdo mudar após o enqueue e antes do worker, o envio falha e exige nova aprovação.
+
+`DemoERPClient` não conecta a sistemas externos nem faz lançamentos financeiros: ele simula o cadastro e produz um identificador estável `ERP-DEMO-...` pela chave de idempotência (workspace, documento e versão aprovada). A fila usa `ERP_REDIS_URL` (padrão: `REDIS_URL`), `DOCUFLOW_ERP_QUEUE_NAME` (`erp-submissions`) e `DOCUFLOW_ERP_JOB_TIMEOUT_SECONDS` (`60`). Inicie um worker separado da fila de documentos:
+
+```bash
+set -a
+. ./.env
+set +a
+./.venv/bin/rq worker --url "${ERP_REDIS_URL:-$REDIS_URL}" "${DOCUFLOW_ERP_QUEUE_NAME:-erp-submissions}"
+```
 
 Depois que o worker termina, `GET /documents/{id}` retorna o documento extraído, avisos, validação e o estado comercial `blocked`, `divergent` ou `ready_for_review`. Divergências ficam persistidas para a revisão humana. Tipo e tamanho inválidos retornam HTTP 4xx antes do registro; pedido ausente retorna 404; falta de acesso retorna 403; indisponibilidade da fila retorna 503 com o ID do documento preservado. Falhas de PDF, timeout ou provedor são registradas como `failed` e podem ser consultadas sem expor detalhes internos.
 
@@ -125,6 +140,15 @@ set +a
 ./.venv/bin/rq worker --url "$REDIS_URL" "$DOCUFLOW_QUEUE_NAME"
 ```
 
+Instale as dependências OCR no mesmo host onde esse worker será executado. O padrão é `DOCUFLOW_OCR_LANGUAGE=por+eng`; o executável é configurável por `DOCUFLOW_TESSERACT_CMD`, o DPI por `DOCUFLOW_OCR_DPI` e o limite de cada chamada por `DOCUFLOW_OCR_TIMEOUT_SECONDS`. O `.env.example` contém esses valores ilustrativos. Para conferir se o comando e os dados de idioma estão disponíveis antes de iniciar o worker:
+
+```bash
+tesseract --version
+tesseract --list-langs
+```
+
+Na lista, confirme que aparecem `por` e `eng`. Se a execução informar `Failed loading language 'por'` ou `Error opening data file`, instale o pacote de dados do idioma no host do worker (`brew install tesseract-lang` no macOS ou `sudo apt install tesseract-ocr-por` no Debian/Ubuntu) e confira novamente. Se `tesseract` não for encontrado no `PATH`, configure `DOCUFLOW_TESSERACT_CMD` com o caminho absoluto do executável. Quando `TESSDATA_PREFIX` for necessário em uma instalação personalizada, configure-o no ambiente do worker para apontar ao diretório pai de `tessdata`.
+
 Para recuperar documentos que ficaram presos depois de uma interrupção do worker:
 
 ```bash
@@ -136,7 +160,7 @@ set +a
 
 O timeout padrão é 300 segundos, o máximo é 3 tentativas e o limiar de recuperação é 900 segundos. Ajuste `DOCUFLOW_JOB_TIMEOUT_SECONDS`, `DOCUFLOW_MAX_ATTEMPTS` e `DOCUFLOW_STALE_AFTER_SECONDS` no `.env`; `REDIS_URL`, `REDIS_PORT` e `DOCUFLOW_QUEUE_NAME` também são configuráveis. O limiar de recuperação deve ser maior que o timeout dos jobs.
 
-O seed pode ser executado mais de uma vez: se o pedido `PC-2026-0001` já existir, ele informa isso e não o duplica. A migração `20261013_0002` cria o workspace `demo` e associa a ele todos os fornecedores e pedidos já existentes, preservando seus IDs, itens e demais dados. A migração `20261014_0003` adiciona documentos sem apagar dados e restringe cada documento ao workspace e ao pedido correspondente por chave estrangeira composta. A migração `20261015_0004` amplia o estado da revisão e cria tabelas separadas para snapshots revisados, aprovações e auditoria; os documentos existentes recebem versão inicial `1`. A migração `20261016_0005` adiciona fila, tentativas e ID do job ativo; converte os registros `succeeded` para `ready_for_review` e preserva resultados e snapshots. A migração `20261016_0006` muda o default do banco para `queued`. A aplicação não cria tabelas nem dados durante a inicialização. Os modelos ficam em `backend/app/models/`; as revisões ficam em `backend/migrations/versions/`. Valores de quantidade e dinheiro usam `NUMERIC` no banco e `Decimal` em Python. As credenciais não devem ser adicionadas ao arquivo Alembic nem ao código.
+O seed pode ser executado mais de uma vez: se o pedido `PC-2026-0001` já existir, ele informa isso e não o duplica. A migração `20261013_0002` cria o workspace `demo` e associa a ele todos os fornecedores e pedidos já existentes, preservando seus IDs, itens e demais dados. A migração `20261014_0003` adiciona documentos sem apagar dados e restringe cada documento ao workspace e ao pedido correspondente por chave estrangeira composta. A migração `20261015_0004` amplia o estado da revisão e cria tabelas separadas para snapshots revisados, aprovações e auditoria; os documentos existentes recebem versão inicial `1`. A migração `20261016_0005` adiciona fila, tentativas e ID do job ativo; converte os registros `succeeded` para `ready_for_review` e preserva resultados e snapshots. A migração `20261016_0006` muda o default do banco para `queued`. A migração `20261017_0007` adiciona solicitações ERP com unicidade por workspace/documento/versão aprovada e amplia os tipos de evento de auditoria, sem alterar dados ou snapshots existentes. A aplicação não cria tabelas nem dados durante a inicialização. Os modelos ficam em `backend/app/models/`; as revisões ficam em `backend/migrations/versions/`. Valores de quantidade e dinheiro usam `NUMERIC` no banco e `Decimal` em Python. As credenciais não devem ser adicionadas ao arquivo Alembic nem ao código.
 
 Depois da migração, o workspace `demo` já existe. Crie o primeiro usuário pelo comando administrativo; ele pede a senha de forma interativa duas vezes, sem colocá-la em argumentos ou arquivos versionados:
 
@@ -164,11 +188,19 @@ Os testes unitários usam SQLite temporário e adaptadores de fila/provedor simu
 ./.venv/bin/python -m unittest discover -s backend/tests -v
 ```
 
+Para executar somente os testes do fluxo ERP:
+
+```bash
+./.venv/bin/python -m unittest backend.tests.test_erp_submission -v
+```
+
 Os testes de integração PostgreSQL rodam separadamente contra a base local dedicada `docuflow_test`. Eles aplicam apenas `upgrade head`, não removem tabelas nem limpam dados; os registros criados permanecem nessa base. O helper recusa SQLite, outros nomes de banco e uma URL igual a `DATABASE_URL`.
 
 ```bash
 ./.venv/bin/python -m unittest discover -s backend/tests/integration -v
 ```
+
+A integração ERP usa essa base dedicada e a Redis de teste, com uma fila de nome aleatório. Ela valida a migração, a persistência e um worker RQ real em `burst`; o adaptador permanece local e determinístico, sem ERP externo. Não usa a fila de documentos nem recuperação global.
 
 O teste `test_rq_real_integration` também usa Redis real quando `TEST_REDIS_URL` está definida. Ele cria um nome de fila aleatório, executa um worker RQ em modo burst e usa um provedor determinístico exclusivo dos testes; não chama Ollama. Se `TEST_DATABASE_URL` ou `TEST_REDIS_URL` estiver ausente, o teste é marcado como ignorado. O padrão do `.env.example` separa a base lógica Redis de teste (`/15`) da fila normal (`/0`). A limpeza remove apenas jobs e chaves da fila aleatória criada pela execução; não usa `FLUSHDB` nem apaga volumes.
 
@@ -183,6 +215,23 @@ set +a
 ```
 
 Os testes unitários continuam sem depender de Redis. A integração real verifica que documento e arquivo existem antes do enqueue, que o job contém apenas o ID, a transição pelo worker, job repetido e recuperação após interrupção simulada.
+
+O teste completo de OCR pela fila é opt-in. Além da base e do Redis de teste, ele exige `DOCUFLOW_RUN_TESSERACT_TESTS=1`, o executável configurado e todos os idiomas de `DOCUFLOW_OCR_LANGUAGE`. Ele gera um PDF somente-imagem, usa uma fila exclusiva, roda o worker RQ real em `burst` e chama Tesseract real; o provedor estruturado é determinístico e exclusivo do teste. O teste remove somente o job, as chaves da sua fila e o arquivo temporário criado por ele.
+
+```bash
+docker compose up -d postgres redis
+set -a
+. ./.env
+set +a
+export TEST_REDIS_URL=redis://localhost:6379/15
+export DOCUFLOW_RUN_TESSERACT_TESTS=1
+export DOCUFLOW_OCR_LANGUAGE=por+eng
+./.venv/bin/python -m unittest \
+  backend.tests.integration.test_rq_real_integration.RealRQPostgreSQLIntegrationTests.test_real_rq_ocr_upload_uses_tesseract_and_validates_page_evidence \
+  -v
+```
+
+Ele é ignorado se `TEST_DATABASE_URL`, `TEST_REDIS_URL` ou `DOCUFLOW_RUN_TESSERACT_TESTS=1` estiver ausente; também é ignorado se o executável ou algum idioma configurado não estiver disponível.
 
 O SQL de inicialização do Compose cria a base de teste somente quando o volume PostgreSQL é inicializado pela primeira vez. Se estiver usando um volume local existente no qual essa base ainda não existe, crie-a sem apagar o volume com `docker compose exec postgres createdb -U docuflow docuflow_test` (ajuste o usuário se mudou `POSTGRES_USER`). Para parar o serviço mantendo todos os dados, use `docker compose stop postgres`; para iniciá-lo novamente, `docker compose start postgres`. Não use `down -v` para encerrar o ambiente.
 

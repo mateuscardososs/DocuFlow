@@ -103,6 +103,12 @@ class ReviewRejectionRequest(ReviewDecisionRequest):
         return normalized
 
 
+class ERPSubmissionRequestBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    expected_version: int = Field(gt=0)
+
+
 class DocumentApprovalView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -128,9 +134,26 @@ class DocumentAuditEventView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: int
-    event_type: Literal["review", "correction", "approval", "rejection"]
+    event_type: Literal[
+        "review", "correction", "approval", "rejection",
+        "erp_submission", "erp_attempt", "erp_success", "erp_failure",
+    ]
     version: int
     actor_user_id: int
     justification: str | None
     details: dict[str, Any] | None
     created_at: datetime
+
+
+class ERPSubmissionView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    document_id: int
+    approved_version: int
+    state: Literal["queued", "processing", "succeeded", "failed"]
+    attempts: int
+    erp_identifier: str | None
+    failure_message: str | None
+    requested_at: datetime
+    updated_at: datetime

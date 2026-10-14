@@ -148,7 +148,8 @@ class DocumentAuditEventEntity(Base):
             ondelete="RESTRICT",
         ),
         CheckConstraint(
-            "event_type IN ('review', 'correction', 'approval', 'rejection')",
+            "event_type IN ('review', 'correction', 'approval', 'rejection', "
+            "'erp_submission', 'erp_attempt', 'erp_success', 'erp_failure')",
             name="document_audit_event_type_valid",
         ),
         Index("ix_document_audit_document_created", "document_id", "created_at"),

@@ -16,6 +16,8 @@ from backend.app.document_schemas import (
     DocumentDetail,
     DocumentReviewResponse,
     DocumentSummary,
+    ERPSubmissionRequestBody,
+    ERPSubmissionView,
     ReviewCorrectionRequest,
     ReviewDecisionRequest,
     ReviewRejectionRequest,
@@ -23,11 +25,13 @@ from backend.app.document_schemas import (
 from backend.app.db import create_database
 from backend.app.integrations.ollama_extraction import OllamaConfig, OllamaExtractionProvider
 from backend.app.models.document import DocumentEntity
+from backend.app.models.erp_submission import ERPSubmissionEntity
 from backend.app.repositories.purchase_orders import (
     PurchaseOrderRepository,
     SqlAlchemyPurchaseOrderRepository,
 )
 from backend.app.repositories.documents import DocumentRepository, SqlAlchemyDocumentRepository
+from backend.app.repositories.erp_submissions import SqlAlchemyERPSubmissionRepository
 from backend.app.services.document_lifecycle import (
     DocumentAttemptError,
     DocumentLifecycleService,
@@ -48,6 +52,17 @@ from backend.app.services.document_processing import (
     DocumentProcessingConfig,
     DocumentProcessingService,
 )
+from backend.app.services.erp_queue import (
+    ERPQueueConfig,
+    ERPSubmissionQueue,
+    RQERPSubmissionQueue,
+)
+from backend.app.services.erp_submission import (
+    ERPSubmissionEnqueueError,
+    ERPSubmissionNotEligible,
+    ERPSubmissionNotFound,
+    ERPSubmissionService,
+)
 from backend.app.services.pdf_text_extractor import DEFAULT_MAX_BYTES
 from backend.app.services.structured_extraction import ExtractionProvider
 from backend.app.schemas import AccessToken, AuthenticatedUserProfile, ReferenceDocument
@@ -64,6 +79,7 @@ def create_app(
     document_queue: DocumentQueue | None = None,
     session_factory: sessionmaker | None = None,
     auth_settings: AuthSettings | None = None,
+    erp_submission_queue: ERPSubmissionQueue | None = None,
     max_upload_bytes: int = DEFAULT_MAX_BYTES,
 ) -> FastAPI:
     if max_upload_bytes <= 0:
@@ -104,6 +120,13 @@ def create_app(
         document_repository, document_storage, document_queue
     )
     document_review = DocumentReviewService(document_repository, order_repository)
+    erp_submission_repository = SqlAlchemyERPSubmissionRepository(session_factory)
+    if erp_submission_queue is None:
+        erp_submission_queue = RQERPSubmissionQueue(ERPQueueConfig.from_environment())
+    erp_submission = ERPSubmissionService(
+        erp_submission_repository,
+        erp_submission_queue,
+    )
     oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
     app = FastAPI(title="DocuFlow API", version="0.1.0")
@@ -114,6 +137,9 @@ def create_app(
     app.state.document_queue = document_queue
     app.state.document_lifecycle = document_lifecycle
     app.state.document_review = document_review
+    app.state.erp_submission_repository = erp_submission_repository
+    app.state.erp_submission_queue = erp_submission_queue
+    app.state.erp_submission = erp_submission
     app.state.authentication = authentication
     app.state.max_upload_bytes = max_upload_bytes
     app.state.database_engine = database.engine if database is not None else None
@@ -408,6 +434,60 @@ def create_app(
         except SQLAlchemyError:
             raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
 
+    @app.post(
+        "/documents/{document_id}/erp-submission",
+        response_model=ERPSubmissionView,
+        status_code=202,
+    )
+    def request_erp_submission(
+        document_id: int,
+        request: ERPSubmissionRequestBody,
+        response: Response,
+        user: AuthenticatedUser = Depends(current_user),
+        workspace_id: int = Header(alias="X-Workspace-ID"),
+    ) -> ERPSubmissionView | JSONResponse:
+        _require_document_role(authentication, user, workspace_id, "approver")
+        try:
+            result = erp_submission.request(
+                document_id=document_id,
+                workspace_id=workspace_id,
+                expected_version=request.expected_version,
+                requested_by_user_id=user.id,
+            )
+            if not result.enqueued and result.submission.state == "succeeded":
+                response.status_code = 200
+            return _erp_submission_view(result.submission)
+        except ERPSubmissionNotFound:
+            raise HTTPException(status_code=404, detail="Documento não encontrado.") from None
+        except ERPSubmissionNotEligible:
+            raise HTTPException(
+                status_code=409,
+                detail="O documento não possui uma versão aprovada elegível para envio.",
+            ) from None
+        except ERPSubmissionEnqueueError as error:
+            submission = erp_submission_repository.get_by_id(error.submission_id, workspace_id)
+            content = {"detail": str(error)}
+            if submission is not None:
+                content["submission"] = _erp_submission_view(submission).model_dump(mode="json")
+            return JSONResponse(status_code=503, content=content)
+        except SQLAlchemyError:
+            raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
+
+    @app.get("/erp-submissions/{submission_id}", response_model=ERPSubmissionView)
+    def get_erp_submission(
+        submission_id: int,
+        user: AuthenticatedUser = Depends(current_user),
+        workspace_id: int = Header(alias="X-Workspace-ID"),
+    ) -> ERPSubmissionView:
+        _require_document_role(authentication, user, workspace_id, "approver")
+        try:
+            submission = erp_submission_repository.get_by_id(submission_id, workspace_id)
+        except SQLAlchemyError:
+            raise HTTPException(status_code=503, detail="Banco de dados indisponível.") from None
+        if submission is None:
+            raise HTTPException(status_code=404, detail="Solicitação de envio não encontrada.")
+        return _erp_submission_view(submission)
+
     return app
 
 
@@ -589,6 +669,20 @@ def _review_response(
         reviewed_document=ReferenceDocument.model_validate(document_data),
         validation=ValidationReport.model_validate(record.validation_result),
         approval=approval,
+    )
+
+
+def _erp_submission_view(record: ERPSubmissionEntity) -> ERPSubmissionView:
+    return ERPSubmissionView(
+        id=record.id,
+        document_id=record.document_id,
+        approved_version=record.approved_version,
+        state=record.state,
+        attempts=record.attempts,
+        erp_identifier=record.erp_identifier,
+        failure_message=record.failure_message,
+        requested_at=record.requested_at,
+        updated_at=record.updated_at,
     )
 
 

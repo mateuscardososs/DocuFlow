@@ -22,6 +22,9 @@ from backend.app.models.document import (
     DocumentEntity,
     DocumentReviewRevisionEntity,
 )
+from backend.app.models.erp_submission import ERPSubmissionEntity
+from backend.app.repositories.erp_submissions import SqlAlchemyERPSubmissionRepository
+from backend.app.integrations.erp import DemoERPClient
 from backend.app.auth import hash_password
 from backend.app.schemas import ReferenceDocument
 from backend.app.models.purchase_order import PurchaseOrderEntity, PurchaseOrderItem, Supplier
@@ -30,6 +33,7 @@ from backend.app.repositories.documents import SqlAlchemyDocumentRepository
 from backend.app.seed_reference_order import seed_reference_order
 from backend.app.services.document_processing import DocumentProcessingResult
 from backend.app.services.document_review import DocumentReviewService
+from backend.app.services.erp_submission import ERPSubmissionWorkerService
 from backend.app.validation import ValidationReport
 from backend.tests.test_document_processing import reference_payload
 from backend.tests.test_pdf_text_extractor import REFERENCE_TEXT
@@ -128,7 +132,7 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         )
         with self.engine.connect() as connection:
             revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
-        self.assertEqual(revision, "20261016_0006")
+        self.assertEqual(revision, "20261017_0007")
         self.assertIn(
             "uq_purchase_orders_workspace_reference",
             {item["name"] for item in inspector.get_unique_constraints("purchase_orders")},
@@ -140,6 +144,11 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         self.assertTrue(
             {"document_review_revisions", "document_approvals", "document_audit_events"}
             .issubset(set(inspector.get_table_names()))
+        )
+        self.assertIn("erp_submissions", inspector.get_table_names())
+        self.assertIn(
+            "uq_erp_submission_workspace_document_version",
+            {item["name"] for item in inspector.get_unique_constraints("erp_submissions")},
         )
         self.assertIn(
             "uq_documents_workspace_sha256",
@@ -711,6 +720,99 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
                 ).all()
             )
         self.assertEqual(event_types, {"review", "correction", "approval"})
+
+    def test_erp_submission_snapshot_idempotency_and_audit_persist_in_postgresql(self):
+        seed_reference_order(self.session_factory)
+        with Session(self.engine) as session:
+            order_id = session.scalar(
+                select(PurchaseOrderEntity.id).where(
+                    PurchaseOrderEntity.workspace_id == self.demo_workspace_id,
+                    PurchaseOrderEntity.reference == "PC-2026-0001",
+                )
+            )
+            user = User(
+                email=f"erp-approver-{uuid4().hex}@example.test",
+                password_hash=hash_password("integration-test-password"),
+            )
+            session.add(user)
+            session.flush()
+            approver_id = user.id
+            session.add(WorkspaceMembership(
+                user_id=approver_id,
+                workspace_id=self.demo_workspace_id,
+                role="approver",
+            ))
+            payload = reference_payload()
+            document = DocumentEntity(
+                workspace_id=self.demo_workspace_id,
+                purchase_order_id=order_id,
+                original_filename="approved-for-erp.pdf",
+                size_bytes=100,
+                content_type="application/pdf",
+                sha256=uuid4().hex + uuid4().hex,
+                storage_key=f"{self.demo_workspace_id}/{uuid4().hex}.pdf",
+                processing_status="ready_for_review",
+                review_status="approved",
+                review_version=1,
+                extracted_document=payload,
+                final_status="ready_for_review",
+            )
+            session.add(document)
+            session.flush()
+            document_id = document.id
+            session.add(DocumentApprovalEntity(
+                document_id=document_id,
+                workspace_id=self.demo_workspace_id,
+                reviewed_version=1,
+                approved_document=payload,
+                validation_result={"status": "ready_for_review", "findings": []},
+                approver_user_id=approver_id,
+            ))
+            session.commit()
+
+        repository = SqlAlchemyERPSubmissionRepository(self.session_factory)
+        first, should_enqueue = repository.request(
+            document_id=document_id,
+            workspace_id=self.demo_workspace_id,
+            expected_version=1,
+            requested_by_user_id=approver_id,
+            job_id="erp-pg-first",
+        )
+        repeated, enqueue_again = repository.request(
+            document_id=document_id,
+            workspace_id=self.demo_workspace_id,
+            expected_version=1,
+            requested_by_user_id=approver_id,
+            job_id="erp-pg-repeat",
+        )
+        self.assertTrue(should_enqueue)
+        self.assertFalse(enqueue_again)
+        self.assertEqual(first.id, repeated.id)
+
+        worker = ERPSubmissionWorkerService(repository, DemoERPClient())
+        self.assertEqual(
+            worker.process(submission_id=first.id, job_id="erp-pg-first"), "succeeded"
+        )
+        self.assertEqual(
+            worker.process(submission_id=first.id, job_id="erp-pg-first"), "skipped"
+        )
+        with Session(self.engine) as session:
+            stored = session.get(ERPSubmissionEntity, first.id)
+            self.assertEqual(stored.state, "succeeded")
+            self.assertEqual(stored.attempts, 1)
+            self.assertTrue(stored.erp_identifier.startswith("ERP-DEMO-"))
+            snapshot = session.scalar(
+                select(DocumentApprovalEntity.approved_document).where(
+                    DocumentApprovalEntity.document_id == document_id
+                )
+            )
+            event_types = set(session.scalars(
+                select(DocumentAuditEventEntity.event_type).where(
+                    DocumentAuditEventEntity.document_id == document_id
+                )
+            ))
+        self.assertEqual(snapshot, payload)
+        self.assertEqual(event_types, {"erp_submission", "erp_attempt", "erp_success"})
 
 
 if __name__ == "__main__":
