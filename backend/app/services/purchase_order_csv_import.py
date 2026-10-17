@@ -156,7 +156,10 @@ def parse_purchase_order_csv(content: bytes) -> ParsedPurchaseOrderCsv:
             # Conta a linha física de início, mesmo se a descrição tiver quebras de linha.
             line_number = previous_line_number + 1
             previous_line_number = reader.line_num
-            if raw is None or all(not (value or "").strip() for value in raw.values()):
+            if raw is None or (
+                None not in raw
+                and all(not (raw.get(field) or "").strip() for field in headers)
+            ):
                 continue
             total_rows += 1
             if None in raw:

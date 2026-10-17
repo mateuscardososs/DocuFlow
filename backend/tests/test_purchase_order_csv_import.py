@@ -102,6 +102,16 @@ class PurchaseOrderCsvImportApiTests(unittest.TestCase):
         self.assertIn("fornecedor", errors[0]["reason"].lower())
         self.assertIn("referência", errors[1]["reason"].lower())
 
+    def test_extra_columns_on_blank_row_return_a_line_error(self):
+        client, _, _ = create_client(self)
+        extra_column_row = ",".join([""] * 9 + ["valor inesperado"])
+
+        response = send_preview(client, csv_bytes(extra_column_row))
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["errors"][0]["line_number"], 2)
+        self.assertIn("mais colunas", response.json()["errors"][0]["reason"])
+
     def test_error_line_number_counts_physical_lines_after_quoted_newline(self):
         client, _, _ = create_client(self)
         content = (

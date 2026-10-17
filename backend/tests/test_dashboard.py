@@ -83,6 +83,7 @@ class DashboardTests(unittest.TestCase):
                     approved_version=1,
                     requested_by_user_id=user.id,
                     state=state,
+                    requested_at=datetime(2026, 10, 14, 12, tzinfo=timezone.utc),
                 ))
             session.add(ERPSubmissionEntity(
                 workspace_id=second.id, document_id=foreign.id, approved_version=1,

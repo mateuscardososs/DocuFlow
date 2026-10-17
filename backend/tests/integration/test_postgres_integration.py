@@ -176,27 +176,30 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
 
     def test_commercial_policy_versions_persist_author_currency_values_and_history(self):
         suffix = uuid4().hex
+        workspace = Workspace(
+            slug=f"policy-history-{suffix}", name="Histórico de política de integração"
+        )
         user = User(email=f"policy-{suffix}@example.test", password_hash="not-a-login")
         with Session(self.engine) as session:
-            session.add(user)
+            session.add_all([workspace, user])
             session.flush()
-            actor_id = user.id
+            workspace_id, actor_id = workspace.id, user.id
             session.commit()
         repository = SqlAlchemyCommercialPolicyRepository(self.session_factory)
         first = repository.update(
-            workspace_id=self.demo_workspace_id,
+            workspace_id=workspace_id,
             expected_version=0,
             actor_user_id=actor_id,
             currency_tolerances={"BRL": "0.05", "USD": "1.25"},
         )
         second = repository.update(
-            workspace_id=self.demo_workspace_id,
+            workspace_id=workspace_id,
             expected_version=1,
             actor_user_id=actor_id,
             currency_tolerances={"BRL": "0.10"},
         )
         self.assertEqual((first.version, second.version), (1, 2))
-        history = repository.history(self.demo_workspace_id)
+        history = repository.history(workspace_id)
         self.assertEqual([row.version for row in history[:2]], [2, 1])
         self.assertEqual(history[1].currency_tolerances, {"BRL": "0.05", "USD": "1.25"})
         self.assertEqual(history[1].created_by_user_id, actor_id)
@@ -1136,6 +1139,7 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
                 ERPSubmissionEntity(
                     workspace_id=workspace.id, document_id=erp_document.id, approved_version=1,
                     requested_by_user_id=user.id, state=state,
+                    requested_at=datetime(2026, 10, 14, 12, tzinfo=timezone.utc),
                 )
                 for erp_document, state in zip(erp_documents, ("queued", "processing", "succeeded", "failed"))
             ])
