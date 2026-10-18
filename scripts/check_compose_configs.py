@@ -65,6 +65,9 @@ def verify_production_config(config: dict, domain: str) -> None:
     app_network = networks["application"]
     if not app_network.get("internal"):
         raise RuntimeError("A rede de aplicação precisa ser interna.")
+    ollama_network = networks["ollama_private"]
+    if not ollama_network.get("internal") or ollama_network.get("external"):
+        raise RuntimeError("A rede do Ollama precisa ser criada como interna pelo Compose.")
     if set(services["postgres"].get("networks", {})) != {"application"}:
         raise RuntimeError("PostgreSQL não pode sair da rede interna da aplicação.")
     if set(services["redis"].get("networks", {})) != {"application"}:
