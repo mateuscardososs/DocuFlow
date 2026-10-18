@@ -32,6 +32,7 @@ PLACEHOLDER = re.compile(
 SAFE_SECRET = re.compile(r"^[A-Za-z0-9_-]+$")
 DNS_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", re.IGNORECASE)
 DOCKER_NETWORK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$")
+DATABASE_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
 
 
 class ProductionEnvironmentError(ValueError):
@@ -109,6 +110,11 @@ def validate_environment(values: dict[str, str]) -> None:
         value = values.get(key, "")
         if value and (len(value) < 32 or not SAFE_SECRET.fullmatch(value)):
             errors.append(f"{key} precisa ter ao menos 32 caracteres URL-safe.")
+
+    for key in ("POSTGRES_DB", "POSTGRES_USER"):
+        value = values.get(key, "").strip()
+        if value and not DATABASE_IDENTIFIER.fullmatch(value):
+            errors.append(f"{key} precisa conter apenas letras, números e underscore, começando por letra.")
 
     jwt_secret = values.get("JWT_SECRET_KEY", "")
     if jwt_secret and (len(jwt_secret) < 64 or not SAFE_SECRET.fullmatch(jwt_secret)):

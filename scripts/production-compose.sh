@@ -11,9 +11,7 @@ if [ ! -f "$env_file" ]; then
 fi
 
 python3 "$script_dir/validate_production_env.py" "$env_file"
-project_name=${DOCUFLOW_COMPOSE_PROJECT_NAME:-docuflow-production}
 exec docker compose \
-	--project-name "$project_name" \
 	--env-file "$env_file" \
 	--file "$repo_root/compose.production.yaml" \
 	"$@"

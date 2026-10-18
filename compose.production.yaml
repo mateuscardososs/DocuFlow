@@ -93,7 +93,6 @@ services:
       - docuflow_production_private_documents:/var/lib/docuflow/documents
     networks:
       - application
-      - ollama_private
     depends_on:
       postgres:
         condition: service_healthy
@@ -265,8 +264,9 @@ networks:
   proxy_egress:
     driver: bridge
   ollama_private:
-    external: true
     name: ${DOCUFLOW_OLLAMA_DOCKER_NETWORK:?Set the private Ollama Docker network}
+    driver: bridge
+    internal: true
 
 volumes:
   docuflow_production_postgres_data:
