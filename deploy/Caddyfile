@@ -1,0 +1,19 @@
+{
+	email {$DOCUFLOW_ACME_EMAIL}
+	acme_ca {$DOCUFLOW_ACME_CA}
+}
+
+{$DOCUFLOW_DOMAIN} {
+	encode zstd gzip
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		X-Frame-Options DENY
+		Strict-Transport-Security "max-age=31536000"
+	}
+
+	@api path /health /auth/* /commercial-policy* /dashboard* /documents* /erp-submissions* /purchase-orders* /workspaces/*
+	reverse_proxy @api api:8000
+	reverse_proxy frontend:8080
+}

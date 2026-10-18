@@ -1,0 +1,281 @@
+name: ${DOCUFLOW_COMPOSE_PROJECT_NAME:-docuflow-production}
+
+services:
+  proxy:
+    image: caddy:2.11.7-alpine
+    ports:
+      - "${DOCUFLOW_HTTP_PORT:-80}:80"
+      - "${DOCUFLOW_HTTPS_PORT:-443}:443"
+    environment:
+      DOCUFLOW_DOMAIN: ${DOCUFLOW_DOMAIN:?Configure DOCUFLOW_DOMAIN}
+      DOCUFLOW_ACME_EMAIL: ${DOCUFLOW_ACME_EMAIL:?Configure DOCUFLOW_ACME_EMAIL}
+      DOCUFLOW_ACME_CA: ${DOCUFLOW_ACME_CA:?Configure DOCUFLOW_ACME_CA}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - docuflow_production_caddy_data:/data
+      - docuflow_production_caddy_config:/config
+    networks:
+      - application
+      - proxy_egress
+    depends_on:
+      frontend:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: https://${DOCUFLOW_DOMAIN:?Configure DOCUFLOW_DOMAIN}
+    networks:
+      - application
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+      - /var/cache/nginx:rw,noexec,nosuid,size=16m
+      - /var/run:rw,noexec,nosuid,size=1m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: runtime
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?Configure POSTGRES_USER}:${POSTGRES_PASSWORD:?Configure POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?Configure POSTGRES_DB}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Configure JWT_SECRET_KEY}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      DOCUFLOW_FRONTEND_ORIGIN: https://${DOCUFLOW_DOMAIN:?Configure DOCUFLOW_DOMAIN}
+      DOCUMENT_STORAGE_DIR: /var/lib/docuflow/documents
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Configure REDIS_PASSWORD}@redis:6379/0
+      DOCUFLOW_QUEUE_NAME: ${DOCUFLOW_QUEUE_NAME:-documents}
+      DOCUFLOW_JOB_TIMEOUT_SECONDS: ${DOCUFLOW_JOB_TIMEOUT_SECONDS:-300}
+      DOCUFLOW_MAX_ATTEMPTS: ${DOCUFLOW_MAX_ATTEMPTS:-3}
+      DOCUFLOW_STALE_AFTER_SECONDS: ${DOCUFLOW_STALE_AFTER_SECONDS:-900}
+      ERP_REDIS_URL: redis://:${REDIS_PASSWORD:?Configure REDIS_PASSWORD}@redis:6379/0
+      DOCUFLOW_ERP_QUEUE_NAME: ${DOCUFLOW_ERP_QUEUE_NAME:-erp-submissions}
+      DOCUFLOW_ERP_JOB_TIMEOUT_SECONDS: ${DOCUFLOW_ERP_JOB_TIMEOUT_SECONDS:-60}
+      DOCUFLOW_OLLAMA_BASE_URL: ${DOCUFLOW_OLLAMA_BASE_URL:?Configure a private DOCUFLOW_OLLAMA_BASE_URL}
+      DOCUFLOW_OLLAMA_MODEL: ${DOCUFLOW_OLLAMA_MODEL:?Configure DOCUFLOW_OLLAMA_MODEL}
+      DOCUFLOW_OLLAMA_TIMEOUT_SECONDS: ${DOCUFLOW_OLLAMA_TIMEOUT_SECONDS:-60}
+    volumes:
+      - docuflow_production_private_documents:/var/lib/docuflow/documents
+    networks:
+      - application
+      - ollama_private
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "backend.app.compose_healthcheck", "api"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  document-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: document-worker
+    command:
+      - rq
+      - worker
+      - --url
+      - redis://:${REDIS_PASSWORD:?Configure REDIS_PASSWORD}@redis:6379/0
+      - --name
+      - docuflow-document-worker
+      - ${DOCUFLOW_QUEUE_NAME:-documents}
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?Configure POSTGRES_USER}:${POSTGRES_PASSWORD:?Configure POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?Configure POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Configure REDIS_PASSWORD}@redis:6379/0
+      DOCUFLOW_QUEUE_NAME: ${DOCUFLOW_QUEUE_NAME:-documents}
+      ERP_REDIS_URL: redis://:${REDIS_PASSWORD:?Configure REDIS_PASSWORD}@redis:6379/0
+      DOCUFLOW_ERP_QUEUE_NAME: ${DOCUFLOW_ERP_QUEUE_NAME:-erp-submissions}
+      DOCUMENT_STORAGE_DIR: /var/lib/docuflow/documents
+      DOCUFLOW_OLLAMA_BASE_URL: ${DOCUFLOW_OLLAMA_BASE_URL:?Configure a private DOCUFLOW_OLLAMA_BASE_URL}
+      DOCUFLOW_OLLAMA_MODEL: ${DOCUFLOW_OLLAMA_MODEL:?Configure DOCUFLOW_OLLAMA_MODEL}
+      DOCUFLOW_OLLAMA_TIMEOUT_SECONDS: ${DOCUFLOW_OLLAMA_TIMEOUT_SECONDS:-60}
+      DOCUFLOW_OCR_LANGUAGE: ${DOCUFLOW_OCR_LANGUAGE:-por+eng}
+      DOCUFLOW_OCR_DPI: ${DOCUFLOW_OCR_DPI:-300}
+      DOCUFLOW_OCR_TIMEOUT_SECONDS: ${DOCUFLOW_OCR_TIMEOUT_SECONDS:-30}
+      DOCUFLOW_NATIVE_TEXT_MIN_CHARS: ${DOCUFLOW_NATIVE_TEXT_MIN_CHARS:-1}
+      DOCUFLOW_TESSERACT_CMD: ${DOCUFLOW_TESSERACT_CMD:-tesseract}
+      DOCUFLOW_RQ_WORKER_NAME: docuflow-document-worker
+    volumes:
+      - docuflow_production_private_documents:/var/lib/docuflow/documents
+    networks:
+      - application
+      - ollama_private
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "backend.app.compose_healthcheck", "document-worker"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  erp-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: runtime
+    command:
+      - rq
+      - worker
+      - --url
+      - redis://:${REDIS_PASSWORD:?Configure REDIS_PASSWORD}@redis:6379/0
+      - --name
+      - docuflow-erp-worker
+      - ${DOCUFLOW_ERP_QUEUE_NAME:-erp-submissions}
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?Configure POSTGRES_USER}:${POSTGRES_PASSWORD:?Configure POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?Configure POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Configure REDIS_PASSWORD}@redis:6379/0
+      ERP_REDIS_URL: redis://:${REDIS_PASSWORD:?Configure REDIS_PASSWORD}@redis:6379/0
+      DOCUFLOW_ERP_QUEUE_NAME: ${DOCUFLOW_ERP_QUEUE_NAME:-erp-submissions}
+      DOCUFLOW_RQ_WORKER_NAME: docuflow-erp-worker
+    networks:
+      - application
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "backend.app.compose_healthcheck", "erp-worker"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  postgres:
+    image: postgres:18.6-bookworm
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Configure POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?Configure POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Configure POSTGRES_PASSWORD}
+    volumes:
+      - docuflow_production_postgres_data:/var/lib/postgresql
+    networks:
+      - application
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  redis:
+    image: redis:8.2.10-alpine3.22
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Configure REDIS_PASSWORD}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Configure REDIS_PASSWORD}
+    volumes:
+      - docuflow_production_redis_data:/data
+    networks:
+      - application
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 3s
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  application:
+    driver: bridge
+    internal: true
+  proxy_egress:
+    driver: bridge
+  ollama_private:
+    external: true
+    name: ${DOCUFLOW_OLLAMA_DOCKER_NETWORK:?Set the private Ollama Docker network}
+
+volumes:
+  docuflow_production_postgres_data:
+    name: ${DOCUFLOW_POSTGRES_VOLUME:-docuflow_production_postgres_data}
+  docuflow_production_redis_data:
+    name: ${DOCUFLOW_REDIS_VOLUME:-docuflow_production_redis_data}
+  docuflow_production_private_documents:
+    name: ${DOCUFLOW_DOCUMENTS_VOLUME:-docuflow_production_private_documents}
+  docuflow_production_caddy_data:
+    name: ${DOCUFLOW_CADDY_DATA_VOLUME:-docuflow_production_caddy_data}
+  docuflow_production_caddy_config:
+    name: ${DOCUFLOW_CADDY_CONFIG_VOLUME:-docuflow_production_caddy_config}
