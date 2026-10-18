@@ -496,3 +496,124 @@ Os testes SQLite cobrem a política padrão, limites, moedas, histórico, isolam
 .venv/bin/python -m unittest discover -s backend/tests/integration -p test_postgres_integration.py -v
 cd frontend && npm run test -- --run && npm run typecheck && npm run lint && npm run build
 ```
+
+## Piloto em uma VPS
+
+`compose.production.yaml` é uma configuração independente para o piloto. Ela não estende nem altera `compose.yaml`, os nomes dos volumes locais ou `.env`. O script `scripts/production-compose.sh` valida o arquivo de ambiente antes de cada comando Compose. O exemplo `deploy/production.env.example` contém apenas valores ilustrativos e é rejeitado pelo validador; `.env.production` é ignorado pelo Git.
+
+### Pré-requisitos e configuração inicial
+
+Use uma VPS Linux com Docker Engine e o plugin Docker Compose instalados, espaço e rotina de backup apropriados ao volume de documentos, e um domínio controlado pelo operador. Aponte o registro DNS A (e AAAA, se usado) para a VPS, libere TCP 80 e 443 no firewall da hospedagem e no firewall do sistema. Caddy solicita e renova certificados automaticamente; isso só será validado quando o domínio real resolver para o host e esses ports estiverem acessíveis. Não há domínio ou provedor de hospedagem fixado neste repositório.
+
+Na VPS, clone uma versão revisada do projeto. Copie o exemplo para um arquivo privado fora do controle de versão e edite os valores. Use um gestor de segredos para criar valores aleatórios; não os passe em argumentos de comandos, não os publique em tickets e restrinja a leitura do arquivo ao usuário de deploy:
+
+```bash
+cp deploy/production.env.example .env.production
+chmod 600 .env.production
+${EDITOR:-vi} .env.production
+./scripts/production-compose.sh config --quiet
+```
+
+Substitua domínio, e-mail ACME, usuário/base do PostgreSQL, senha do PostgreSQL, senha do Redis, chave JWT, modelo e nomes necessários. O validador recusa campos ausentes ou ilustrativos, segredos curtos/inseguros, identificadores de banco inválidos, host local e URL pública para Ollama. Segredos de banco/Redis precisam ter ao menos 32 caracteres URL-safe; `JWT_SECRET_KEY`, ao menos 64. A senha URL-safe evita que a URL interna do PostgreSQL precise de codificação adicional. Mantenha o mesmo segredo e os mesmos nomes de volumes durante atualizações. `.env.production` não deve ser copiado para imagens ou para o repositório.
+
+O Ollama não é incluído no Compose de produção e o modelo não é baixado durante o build. Para a configuração recomendada, execute Ollama em um container sem porta publicada, somente em uma rede Docker interna dedicada; disponibilize o modelo por um processo controlado antes de isolar essa rede. Crie a rede dedicada uma vez:
+
+```bash
+docker network create --internal docuflow_ollama_private
+```
+
+Provisionar o container Ollama fica a cargo do operador. Ele deve usar a rede interna dedicada como sua única rede, sem `ports:`/`-p` e com o modelo já disponível em armazenamento persistente. Não conecte um container que também esteja ligado a uma rede pública nem publique a porta 11434. Configure `DOCUFLOW_OLLAMA_DOCKER_NETWORK=docuflow_ollama_private`, `DOCUFLOW_OLLAMA_BASE_URL=http://ollama:11434` e o modelo disponível; dê ao container o alias `ollama` nessa rede. Se o provedor estiver em outro host, use uma rede privada/VPN sob controle do operador e um IP/hostname privado alcançável; o validador bloqueia host público, `host.docker.internal`, localhost e loopback. A API fica apenas na rede interna da aplicação; somente o worker documental precisa também da rede privada do Ollama.
+
+### Deploy, atualização e rollback
+
+Confirme o arquivo antes do primeiro deploy. Construa as imagens localmente na VPS (o build não chama Ollama nem baixa modelos), inicie os serviços de dados e espere os healthchecks, faça backup antes de migrar e aplique Alembic explicitamente. A aplicação não migra automaticamente ao iniciar:
+
+```bash
+./scripts/production-compose.sh config --quiet
+./scripts/production-compose.sh build api document-worker erp-worker frontend
+./scripts/production-compose.sh up -d --wait postgres redis
+./scripts/production-compose.sh run --rm --no-deps api alembic -c backend/alembic.ini upgrade head
+./scripts/production-compose.sh run --rm --no-deps api python -m backend.app.seed_reference_order
+./scripts/production-compose.sh up -d --wait api document-worker erp-worker frontend proxy
+./scripts/production-compose.sh ps
+```
+
+O seed é explícito e idempotente para o pedido fictício. Crie o primeiro usuário só depois das migrações, usando o prompt de senha oculto (não informe senha como argumento):
+
+```bash
+./scripts/production-compose.sh run --rm --no-deps api \
+  python -m backend.app.admin create-user \
+  --email operador@seu-dominio-configurado --workspace demo --role operator --role approver
+```
+
+Antes de executar, substitua o endereço ilustrativo pelo e-mail real do operador.
+
+O reverse proxy é o único serviço que publica portas: 80 para redirecionamento/ACME e 443 para HTTPS. PostgreSQL, Redis, API, workers e frontend não têm portas publicadas; o frontend estático é acessível pelo proxy, e usa como base da API `https://<DOCUFLOW_DOMAIN>`. A API e o worker documental compartilham o volume privado; o frontend nunca monta documentos. Use `docker compose logs` com cuidado: não imprima `.env.production` nem habilite rastreamento de ambiente.
+
+Para atualizar, obtenha uma versão/tag revisada, faça e verifique backup consistente, construa as imagens da versão e aplique as migrações explicitamente antes de recriar os serviços. Depois verifique healthchecks, login, upload e download de um documento de teste. Não use `down -v`, não altere nomes de volumes e não rode migração contra uma base cuja identidade não foi confirmada.
+
+Para rollback de aplicação, volte ao commit/tag anterior e reconstrua/recrie os containers. Só faça isso se o esquema resultante continuar compatível com a versão anterior. Não tente “desfazer” uma migração destrutiva manualmente. Se a versão anterior não for compatível, coloque o serviço em manutenção e restaure em conjunto o dump PostgreSQL e o backup de documentos feitos no mesmo período, preferencialmente primeiro em uma instalação isolada. Redis mantém fila transitória; após indisponibilidade prolongada, recupere documentos presos conforme abaixo e confira solicitações ERP pendentes antes de reprocessá-las.
+
+### Backup, restauração e recuperação de workers
+
+Para um backup consistente entre metadados e PDFs, entre em manutenção e interrompa API e os dois workers para impedir novos uploads, alterações ou tentativas enquanto os arquivos são copiados. PostgreSQL é salvo com `pg_dump` em formato custom; o volume privado de documentos é arquivado somente para leitura. Use um destino de backup fora do diretório do projeto, com criptografia e retenção apropriadas:
+
+```bash
+umask 077
+BACKUP_DIR=/srv/backups/docuflow/$(date -u +%Y%m%dT%H%M%SZ)
+mkdir -p "$BACKUP_DIR"
+./scripts/production-compose.sh stop proxy api document-worker erp-worker
+./scripts/production-compose.sh exec -T postgres sh -lc \
+  'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$BACKUP_DIR/postgres.dump"
+docker run --rm --network none \
+  -v docuflow_production_private_documents:/source:ro \
+  -v "$BACKUP_DIR:/backup" alpine:3.22 \
+  tar -C /source -czf /backup/documents.tar.gz .
+sha256sum "$BACKUP_DIR/postgres.dump" "$BACKUP_DIR/documents.tar.gz" > "$BACKUP_DIR/SHA256SUMS"
+./scripts/production-compose.sh up -d --wait api document-worker erp-worker frontend proxy
+```
+
+Os comandos usam os nomes de volume padrão. Se `DOCUFLOW_DOCUMENTS_VOLUME` foi personalizado, substitua `docuflow_production_private_documents` pelo nome real. Faça cópias dos dois artefatos e dos checksums para armazenamento protegido independente da VPS. Reinicie os serviços parados após o backup. Não é suficiente copiar apenas o diretório de PDFs ou apenas PostgreSQL: registros e arquivos devem pertencer ao mesmo ponto de consistência.
+
+Teste restauração periodicamente em uma VPS/instalação isolada, com nome de projeto, volumes e banco diferentes; nunca restaure sobre a produção para fazer um ensaio. Um ensaio básico pode restaurar PostgreSQL e arquivos em volumes separados, sem publicar portas nem conectar à rede da produção (substitua `POSTGRES_USER` e `POSTGRES_DB` pelos valores configurados; a senha abaixo é descartável e só existe no contêiner isolado):
+
+```bash
+sha256sum -c "$BACKUP_DIR/SHA256SUMS"
+RESTORE_NAME="docuflow-restore-$(date -u +%Y%m%dT%H%M%SZ)"
+RESTORE_DOCS_VOLUME="${RESTORE_NAME}-documents"
+docker volume create "$RESTORE_NAME"
+docker volume create "$RESTORE_DOCS_VOLUME"
+docker run -d --name "$RESTORE_NAME" --network none \
+  -e POSTGRES_DB=docuflow -e POSTGRES_USER=docuflow \
+  -e POSTGRES_PASSWORD=restore-only-not-a-secret \
+  -v "$RESTORE_NAME:/var/lib/postgresql" postgres:18.6-bookworm
+until docker exec "$RESTORE_NAME" pg_isready -U docuflow -d docuflow; do sleep 2; done
+docker exec -i "$RESTORE_NAME" sh -lc \
+  'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner' < "$BACKUP_DIR/postgres.dump"
+docker run --rm --network none \
+  -v "$RESTORE_DOCS_VOLUME:/restore" \
+  -v "$BACKUP_DIR/documents.tar.gz:/backup/documents.tar.gz:ro" alpine:3.22 \
+  tar -C /restore -xzf /backup/documents.tar.gz
+docker exec "$RESTORE_NAME" psql -U docuflow -d docuflow -c 'SELECT version_num FROM alembic_version'
+```
+
+Para uma verificação funcional completa, configure um Compose de restauração com outro nome de projeto, banco e volumes apontando para esses dados; compare a revisão Alembic, execute healthchecks e confira com uma conta de teste que um documento conhecido pode ser consultado e baixado. Registre o tempo e o resultado; mantenha a produção sem alterações durante o ensaio. Os comandos isolados acima deixam um container e dois volumes de teste para inspeção: remova-os apenas depois de conferir que os nomes correspondem ao ensaio, sem usar comandos globais de limpeza.
+
+Se worker cair, primeiro confirme a saúde de PostgreSQL e Redis e inicie os serviços novamente. Verifique a fila e os documentos com estado `processing`; depois execute o recuperador documental com o projeto/ambiente de produção carregado. O comando examina documentos antigos em processamento e recoloca os elegíveis na fila; não é uma garantia de execução exatamente uma vez. Faça isso somente para esta instalação, nunca contra outra base ou ambiente:
+
+```bash
+./scripts/production-compose.sh run --rm --no-deps api \
+  python -m backend.app.recover_documents
+./scripts/production-compose.sh logs --tail=100 document-worker erp-worker
+```
+
+### Validação local desta configuração
+
+O verificador cria arquivos temporários com credenciais fictícias, renderiza os dois modelos com `docker compose config` e confere as portas e redes declaradas sem iniciar containers:
+
+```bash
+python3 -m unittest backend.tests.test_production_environment -v
+python3 scripts/check_compose_configs.py
+```
+
+Para validar a configuração de produção manualmente, preencha uma cópia privada válida de `deploy/production.env.example` e rode `./scripts/production-compose.sh config --quiet`. O exemplo versionado deve falhar deliberadamente por conter placeholders. Essas verificações estáticas não validam emissão/renovação real do certificado, firewall, DNS, conectividade do Ollama, desempenho, recuperação de backup nem operação de uma VPS. O piloto precisa de validação no domínio e provedor escolhidos antes de receber dados reais.

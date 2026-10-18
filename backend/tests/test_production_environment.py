@@ -79,6 +79,17 @@ class ProductionEnvironmentTests(unittest.TestCase):
         self.assertIn("REDIS_PASSWORD", str(raised.exception))
         self.assertNotIn("password with spaces", str(raised.exception))
 
+    def test_rejects_database_identifiers_that_break_internal_urls(self):
+        values = valid_environment()
+        values["POSTGRES_USER"] = "user/name"
+        values["POSTGRES_DB"] = "db name"
+
+        with self.assertRaises(ProductionEnvironmentError) as raised:
+            validate_environment(values)
+
+        self.assertIn("POSTGRES_USER", str(raised.exception))
+        self.assertIn("POSTGRES_DB", str(raised.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

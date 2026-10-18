@@ -93,7 +93,6 @@ services:
       - docuflow_production_private_documents:/var/lib/docuflow/documents
     networks:
       - application
-      - ollama_private
     depends_on:
       postgres:
         condition: service_healthy

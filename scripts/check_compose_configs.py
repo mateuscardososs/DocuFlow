@@ -20,12 +20,14 @@ def _write_env(path: Path, values: dict[str, str]) -> None:
     path.chmod(0o600)
 
 
-def _render(compose_file: str, env_path: Path, project: str) -> dict:
-    command = [
-        "docker", "compose", "--project-name", project,
+def _render(compose_file: str, env_path: Path, project: str | None) -> dict:
+    command = ["docker", "compose"]
+    if project is not None:
+        command.extend(["--project-name", project])
+    command.extend([
         "--env-file", str(env_path), "--file", str(ROOT / compose_file),
         "config", "--format", "json",
-    ]
+    ])
     try:
         result = subprocess.run(command, cwd=ROOT, check=False, capture_output=True, text=True)
     except FileNotFoundError:
@@ -69,11 +71,12 @@ def verify_production_config(config: dict, domain: str) -> None:
         raise RuntimeError("Redis não pode sair da rede interna da aplicação.")
     if set(services["proxy"].get("networks", {})) != {"application", "proxy_egress"}:
         raise RuntimeError("Somente o proxy deve ter a rede de saída TLS.")
-    for name in ("api", "document-worker"):
-        if set(services[name].get("networks", {})) != {"application", "ollama_private"}:
-            raise RuntimeError(f"{name} precisa usar a rede interna e a rede privada do Ollama.")
-        if services[name].get("extra_hosts"):
-            raise RuntimeError(f"{name} não pode depender de extra_hosts para alcançar o Ollama.")
+    if set(services["api"].get("networks", {})) != {"application"}:
+        raise RuntimeError("A API deve permanecer somente na rede interna da aplicação.")
+    if set(services["document-worker"].get("networks", {})) != {"application", "ollama_private"}:
+        raise RuntimeError("Somente o worker documental deve acessar a rede privada do Ollama.")
+    if services["document-worker"].get("extra_hosts"):
+        raise RuntimeError("O worker não pode depender de extra_hosts para alcançar o Ollama.")
 
     origin = f"https://{domain}"
     if services["api"]["environment"].get("DOCUFLOW_FRONTEND_ORIGIN") != origin:
@@ -126,9 +129,11 @@ def main() -> int:
         _write_env(prod_env, production_values)
         try:
             dev = _render("compose.yaml", dev_env, "docuflow-dev-config-check")
-            prod = _render("compose.production.yaml", prod_env, "docuflow-production-config-check")
+            prod = _render("compose.production.yaml", prod_env, None)
             verify_development_config(dev)
             verify_production_config(prod, production_values["DOCUFLOW_DOMAIN"])
+            if prod.get("name") != production_values["DOCUFLOW_COMPOSE_PROJECT_NAME"]:
+                raise RuntimeError("O nome do projeto de produção precisa vir do arquivo de ambiente.")
         except (KeyError, RuntimeError) as error:
             print(f"Verificação Compose falhou: {error}", file=sys.stderr)
             return 1
