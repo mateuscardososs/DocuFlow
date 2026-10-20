@@ -1,0 +1,2770 @@
+{
+  "cases": [
+    {
+      "case_id": "01",
+      "commercial_expectation": {
+        "divergence_codes": [],
+        "final_status": "ready_for_review",
+        "finding_codes": [],
+        "findings": []
+      },
+      "document_truth": {
+        "absent_fields": [],
+        "evidence_checks_against_canonical_text": [
+          {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "field": "supplier_name",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Identificador: FORN-0001",
+            "field": "supplier_identifier",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Documento comercial: DOC-DEMO-001",
+            "field": "document_number",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Data de emissão: 10/10/2026",
+            "field": "issue_date",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "field": "purchase_order_reference",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Moeda: BRL",
+            "field": "currency",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Total do documento: R$ 1.250,00",
+            "field": "document_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          }
+        ],
+        "expected_printed_text_by_page": [
+          {
+            "page": 1,
+            "text": "DOCUMENTO FICTÍCIO PARA TESTES — SEM VALIDADE FISCAL\nMETALÚRGICA HORIZONTE LTDA.\nIdentificador: FORN-0001\nDocumento comercial: DOC-DEMO-001\nData de emissão: 10/10/2026\nPedido de compra: PC-2026-0001\nMoeda: BRL\nCódigo | Descrição | Quantidade | Preço unitário | Total\nARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00\nPAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00\nTotal do documento: R$ 1.250,00"
+          }
+        ],
+        "extracted_document": {
+          "currency": {
+            "evidence": "Moeda: BRL",
+            "page": 1,
+            "raw_value": "BRL",
+            "value": "BRL"
+          },
+          "document_number": {
+            "evidence": "Documento comercial: DOC-DEMO-001",
+            "page": 1,
+            "raw_value": "DOC-DEMO-001",
+            "value": "DOC-DEMO-001"
+          },
+          "document_total": {
+            "evidence": "Total do documento: R$ 1.250,00",
+            "page": 1,
+            "raw_value": "R$ 1.250,00",
+            "value": "1250.00"
+          },
+          "issue_date": {
+            "evidence": "Data de emissão: 10/10/2026",
+            "page": 1,
+            "raw_value": "10/10/2026",
+            "value": "2026-10-10"
+          },
+          "items": [
+            {
+              "code": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "ARR-001",
+                "value": "ARR-001"
+              },
+              "description": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "Arruela zincada M8",
+                "value": "Arruela zincada M8"
+              },
+              "line_total": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "R$ 855,00",
+                "value": "855.00"
+              },
+              "quantity": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "10",
+                "value": "10"
+              },
+              "unit_price": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "R$ 85,50",
+                "value": "85.50"
+              }
+            },
+            {
+              "code": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "PAR-002",
+                "value": "PAR-002"
+              },
+              "description": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "Parafuso sextavado M8",
+                "value": "Parafuso sextavado M8"
+              },
+              "line_total": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 395,00",
+                "value": "395.00"
+              },
+              "quantity": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "5",
+                "value": "5"
+              },
+              "unit_price": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 79,00",
+                "value": "79.00"
+              }
+            }
+          ],
+          "purchase_order_reference": {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "page": 1,
+            "raw_value": "PC-2026-0001",
+            "value": "PC-2026-0001"
+          },
+          "supplier_identifier": {
+            "evidence": "Identificador: FORN-0001",
+            "page": 1,
+            "raw_value": "FORN-0001",
+            "value": "FORN-0001"
+          },
+          "supplier_name": {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "page": 1,
+            "raw_value": "METALÚRGICA HORIZONTE LTDA.",
+            "value": "METALÚRGICA HORIZONTE LTDA."
+          },
+          "unsupported_elements": []
+        },
+        "item_arithmetic": [
+          {
+            "calculated_line_total": "855.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "855.00",
+            "quantity": "10",
+            "unit_price": "85.50"
+          },
+          {
+            "calculated_line_total": "395.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "395.00",
+            "quantity": "5",
+            "unit_price": "79.00"
+          }
+        ],
+        "items_sum_matches_printed_total_with_0_01_tolerance": true,
+        "printed_document_total": "1250.00",
+        "printed_items_sum": "1250.00"
+      },
+      "duplicate_behavior": {
+        "different_workspace": "create_document",
+        "existing_case_id": null,
+        "same_workspace": "create_document"
+      },
+      "duplicate_of_case_id": null,
+      "filename": "01_correto.pdf",
+      "purchase_order_reference": "PC-2026-0001",
+      "rasterization": null,
+      "sha256": "6f6c4e61566e58c4507701508aa10c92c63c078bf93826c47f81deb035ea541e",
+      "type": "native_pdf"
+    },
+    {
+      "case_id": "02",
+      "commercial_expectation": {
+        "divergence_codes": [
+          "order_price_mismatch",
+          "order_total_mismatch"
+        ],
+        "final_status": "divergent",
+        "finding_codes": [
+          "order_price_mismatch",
+          "order_total_mismatch"
+        ],
+        "findings": [
+          {
+            "code": "order_price_mismatch",
+            "severity": "divergence"
+          },
+          {
+            "code": "order_total_mismatch",
+            "severity": "divergence"
+          }
+        ]
+      },
+      "document_truth": {
+        "absent_fields": [],
+        "evidence_checks_against_canonical_text": [
+          {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "field": "supplier_name",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Identificador: FORN-0001",
+            "field": "supplier_identifier",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Documento comercial: DOC-DEMO-002",
+            "field": "document_number",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Data de emissão: 10/10/2026",
+            "field": "issue_date",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "field": "purchase_order_reference",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Moeda: BRL",
+            "field": "currency",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Total do documento: R$ 1.295,00",
+            "field": "document_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 90,00 | R$ 900,00",
+            "field": "items[1].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 90,00 | R$ 900,00",
+            "field": "items[1].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 90,00 | R$ 900,00",
+            "field": "items[1].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 90,00 | R$ 900,00",
+            "field": "items[1].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 90,00 | R$ 900,00",
+            "field": "items[1].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          }
+        ],
+        "expected_printed_text_by_page": [
+          {
+            "page": 1,
+            "text": "DOCUMENTO FICTÍCIO PARA TESTES — SEM VALIDADE FISCAL\nMETALÚRGICA HORIZONTE LTDA.\nIdentificador: FORN-0001\nDocumento comercial: DOC-DEMO-002\nData de emissão: 10/10/2026\nPedido de compra: PC-2026-0001\nMoeda: BRL\nCódigo | Descrição | Quantidade | Preço unitário | Total\nARR-001 | Arruela zincada M8 | 10 | R$ 90,00 | R$ 900,00\nPAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00\nTotal do documento: R$ 1.295,00"
+          }
+        ],
+        "extracted_document": {
+          "currency": {
+            "evidence": "Moeda: BRL",
+            "page": 1,
+            "raw_value": "BRL",
+            "value": "BRL"
+          },
+          "document_number": {
+            "evidence": "Documento comercial: DOC-DEMO-002",
+            "page": 1,
+            "raw_value": "DOC-DEMO-002",
+            "value": "DOC-DEMO-002"
+          },
+          "document_total": {
+            "evidence": "Total do documento: R$ 1.295,00",
+            "page": 1,
+            "raw_value": "R$ 1.295,00",
+            "value": "1295.00"
+          },
+          "issue_date": {
+            "evidence": "Data de emissão: 10/10/2026",
+            "page": 1,
+            "raw_value": "10/10/2026",
+            "value": "2026-10-10"
+          },
+          "items": [
+            {
+              "code": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 90,00 | R$ 900,00",
+                "page": 1,
+                "raw_value": "ARR-001",
+                "value": "ARR-001"
+              },
+              "description": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 90,00 | R$ 900,00",
+                "page": 1,
+                "raw_value": "Arruela zincada M8",
+                "value": "Arruela zincada M8"
+              },
+              "line_total": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 90,00 | R$ 900,00",
+                "page": 1,
+                "raw_value": "R$ 900,00",
+                "value": "900.00"
+              },
+              "quantity": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 90,00 | R$ 900,00",
+                "page": 1,
+                "raw_value": "10",
+                "value": "10"
+              },
+              "unit_price": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 90,00 | R$ 900,00",
+                "page": 1,
+                "raw_value": "R$ 90,00",
+                "value": "90.00"
+              }
+            },
+            {
+              "code": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "PAR-002",
+                "value": "PAR-002"
+              },
+              "description": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "Parafuso sextavado M8",
+                "value": "Parafuso sextavado M8"
+              },
+              "line_total": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 395,00",
+                "value": "395.00"
+              },
+              "quantity": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "5",
+                "value": "5"
+              },
+              "unit_price": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 79,00",
+                "value": "79.00"
+              }
+            }
+          ],
+          "purchase_order_reference": {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "page": 1,
+            "raw_value": "PC-2026-0001",
+            "value": "PC-2026-0001"
+          },
+          "supplier_identifier": {
+            "evidence": "Identificador: FORN-0001",
+            "page": 1,
+            "raw_value": "FORN-0001",
+            "value": "FORN-0001"
+          },
+          "supplier_name": {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "page": 1,
+            "raw_value": "METALÚRGICA HORIZONTE LTDA.",
+            "value": "METALÚRGICA HORIZONTE LTDA."
+          },
+          "unsupported_elements": []
+        },
+        "item_arithmetic": [
+          {
+            "calculated_line_total": "900.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "900.00",
+            "quantity": "10",
+            "unit_price": "90.00"
+          },
+          {
+            "calculated_line_total": "395.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "395.00",
+            "quantity": "5",
+            "unit_price": "79.00"
+          }
+        ],
+        "items_sum_matches_printed_total_with_0_01_tolerance": true,
+        "printed_document_total": "1295.00",
+        "printed_items_sum": "1295.00"
+      },
+      "duplicate_behavior": {
+        "different_workspace": "create_document",
+        "existing_case_id": null,
+        "same_workspace": "create_document"
+      },
+      "duplicate_of_case_id": null,
+      "filename": "02_preco_divergente.pdf",
+      "purchase_order_reference": "PC-2026-0001",
+      "rasterization": null,
+      "sha256": "7790d03a2783a6465a9fab75f3c9c0ca93ec7cf18cfa275ae57188dc4197e444",
+      "type": "native_pdf"
+    },
+    {
+      "case_id": "03",
+      "commercial_expectation": {
+        "divergence_codes": [
+          "document_total_mismatch",
+          "order_total_mismatch"
+        ],
+        "final_status": "divergent",
+        "finding_codes": [
+          "document_total_mismatch",
+          "order_total_mismatch"
+        ],
+        "findings": [
+          {
+            "code": "document_total_mismatch",
+            "severity": "divergence"
+          },
+          {
+            "code": "order_total_mismatch",
+            "severity": "divergence"
+          }
+        ]
+      },
+      "document_truth": {
+        "absent_fields": [],
+        "evidence_checks_against_canonical_text": [
+          {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "field": "supplier_name",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Identificador: FORN-0001",
+            "field": "supplier_identifier",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Documento comercial: DOC-DEMO-003",
+            "field": "document_number",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Data de emissão: 10/10/2026",
+            "field": "issue_date",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "field": "purchase_order_reference",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Moeda: BRL",
+            "field": "currency",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Total do documento: R$ 1.300,00",
+            "field": "document_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          }
+        ],
+        "expected_printed_text_by_page": [
+          {
+            "page": 1,
+            "text": "DOCUMENTO FICTÍCIO PARA TESTES — SEM VALIDADE FISCAL\nMETALÚRGICA HORIZONTE LTDA.\nIdentificador: FORN-0001\nDocumento comercial: DOC-DEMO-003\nData de emissão: 10/10/2026\nPedido de compra: PC-2026-0001\nMoeda: BRL\nCódigo | Descrição | Quantidade | Preço unitário | Total\nARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00\nPAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00\nTotal do documento: R$ 1.300,00"
+          }
+        ],
+        "extracted_document": {
+          "currency": {
+            "evidence": "Moeda: BRL",
+            "page": 1,
+            "raw_value": "BRL",
+            "value": "BRL"
+          },
+          "document_number": {
+            "evidence": "Documento comercial: DOC-DEMO-003",
+            "page": 1,
+            "raw_value": "DOC-DEMO-003",
+            "value": "DOC-DEMO-003"
+          },
+          "document_total": {
+            "evidence": "Total do documento: R$ 1.300,00",
+            "page": 1,
+            "raw_value": "R$ 1.300,00",
+            "value": "1300.00"
+          },
+          "issue_date": {
+            "evidence": "Data de emissão: 10/10/2026",
+            "page": 1,
+            "raw_value": "10/10/2026",
+            "value": "2026-10-10"
+          },
+          "items": [
+            {
+              "code": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "ARR-001",
+                "value": "ARR-001"
+              },
+              "description": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "Arruela zincada M8",
+                "value": "Arruela zincada M8"
+              },
+              "line_total": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "R$ 855,00",
+                "value": "855.00"
+              },
+              "quantity": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "10",
+                "value": "10"
+              },
+              "unit_price": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "R$ 85,50",
+                "value": "85.50"
+              }
+            },
+            {
+              "code": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "PAR-002",
+                "value": "PAR-002"
+              },
+              "description": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "Parafuso sextavado M8",
+                "value": "Parafuso sextavado M8"
+              },
+              "line_total": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 395,00",
+                "value": "395.00"
+              },
+              "quantity": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "5",
+                "value": "5"
+              },
+              "unit_price": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 79,00",
+                "value": "79.00"
+              }
+            }
+          ],
+          "purchase_order_reference": {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "page": 1,
+            "raw_value": "PC-2026-0001",
+            "value": "PC-2026-0001"
+          },
+          "supplier_identifier": {
+            "evidence": "Identificador: FORN-0001",
+            "page": 1,
+            "raw_value": "FORN-0001",
+            "value": "FORN-0001"
+          },
+          "supplier_name": {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "page": 1,
+            "raw_value": "METALÚRGICA HORIZONTE LTDA.",
+            "value": "METALÚRGICA HORIZONTE LTDA."
+          },
+          "unsupported_elements": []
+        },
+        "item_arithmetic": [
+          {
+            "calculated_line_total": "855.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "855.00",
+            "quantity": "10",
+            "unit_price": "85.50"
+          },
+          {
+            "calculated_line_total": "395.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "395.00",
+            "quantity": "5",
+            "unit_price": "79.00"
+          }
+        ],
+        "items_sum_matches_printed_total_with_0_01_tolerance": false,
+        "printed_document_total": "1300.00",
+        "printed_items_sum": "1250.00"
+      },
+      "duplicate_behavior": {
+        "different_workspace": "create_document",
+        "existing_case_id": null,
+        "same_workspace": "create_document"
+      },
+      "duplicate_of_case_id": null,
+      "filename": "03_total_incorreto.pdf",
+      "purchase_order_reference": "PC-2026-0001",
+      "rasterization": null,
+      "sha256": "138d58ce5e8624be952b65a952cb02057a3ab996009debaf69332487ec3f8595",
+      "type": "native_pdf"
+    },
+    {
+      "case_id": "04",
+      "commercial_expectation": {
+        "divergence_codes": [
+          "order_quantity_mismatch",
+          "order_total_mismatch"
+        ],
+        "final_status": "divergent",
+        "finding_codes": [
+          "order_quantity_mismatch",
+          "order_total_mismatch"
+        ],
+        "findings": [
+          {
+            "code": "order_quantity_mismatch",
+            "severity": "divergence"
+          },
+          {
+            "code": "order_total_mismatch",
+            "severity": "divergence"
+          }
+        ]
+      },
+      "document_truth": {
+        "absent_fields": [],
+        "evidence_checks_against_canonical_text": [
+          {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "field": "supplier_name",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Identificador: FORN-0001",
+            "field": "supplier_identifier",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Documento comercial: DOC-DEMO-004",
+            "field": "document_number",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Data de emissão: 10/10/2026",
+            "field": "issue_date",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "field": "purchase_order_reference",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Moeda: BRL",
+            "field": "currency",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Total do documento: R$ 1.421,00",
+            "field": "document_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 12 | R$ 85,50 | R$ 1.026,00",
+            "field": "items[1].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 12 | R$ 85,50 | R$ 1.026,00",
+            "field": "items[1].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 12 | R$ 85,50 | R$ 1.026,00",
+            "field": "items[1].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 12 | R$ 85,50 | R$ 1.026,00",
+            "field": "items[1].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 12 | R$ 85,50 | R$ 1.026,00",
+            "field": "items[1].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          }
+        ],
+        "expected_printed_text_by_page": [
+          {
+            "page": 1,
+            "text": "DOCUMENTO FICTÍCIO PARA TESTES — SEM VALIDADE FISCAL\nMETALÚRGICA HORIZONTE LTDA.\nIdentificador: FORN-0001\nDocumento comercial: DOC-DEMO-004\nData de emissão: 10/10/2026\nPedido de compra: PC-2026-0001\nMoeda: BRL\nCódigo | Descrição | Quantidade | Preço unitário | Total\nARR-001 | Arruela zincada M8 | 12 | R$ 85,50 | R$ 1.026,00\nPAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00\nTotal do documento: R$ 1.421,00"
+          }
+        ],
+        "extracted_document": {
+          "currency": {
+            "evidence": "Moeda: BRL",
+            "page": 1,
+            "raw_value": "BRL",
+            "value": "BRL"
+          },
+          "document_number": {
+            "evidence": "Documento comercial: DOC-DEMO-004",
+            "page": 1,
+            "raw_value": "DOC-DEMO-004",
+            "value": "DOC-DEMO-004"
+          },
+          "document_total": {
+            "evidence": "Total do documento: R$ 1.421,00",
+            "page": 1,
+            "raw_value": "R$ 1.421,00",
+            "value": "1421.00"
+          },
+          "issue_date": {
+            "evidence": "Data de emissão: 10/10/2026",
+            "page": 1,
+            "raw_value": "10/10/2026",
+            "value": "2026-10-10"
+          },
+          "items": [
+            {
+              "code": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 12 | R$ 85,50 | R$ 1.026,00",
+                "page": 1,
+                "raw_value": "ARR-001",
+                "value": "ARR-001"
+              },
+              "description": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 12 | R$ 85,50 | R$ 1.026,00",
+                "page": 1,
+                "raw_value": "Arruela zincada M8",
+                "value": "Arruela zincada M8"
+              },
+              "line_total": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 12 | R$ 85,50 | R$ 1.026,00",
+                "page": 1,
+                "raw_value": "R$ 1.026,00",
+                "value": "1026.00"
+              },
+              "quantity": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 12 | R$ 85,50 | R$ 1.026,00",
+                "page": 1,
+                "raw_value": "12",
+                "value": "12"
+              },
+              "unit_price": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 12 | R$ 85,50 | R$ 1.026,00",
+                "page": 1,
+                "raw_value": "R$ 85,50",
+                "value": "85.50"
+              }
+            },
+            {
+              "code": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "PAR-002",
+                "value": "PAR-002"
+              },
+              "description": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "Parafuso sextavado M8",
+                "value": "Parafuso sextavado M8"
+              },
+              "line_total": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 395,00",
+                "value": "395.00"
+              },
+              "quantity": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "5",
+                "value": "5"
+              },
+              "unit_price": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 79,00",
+                "value": "79.00"
+              }
+            }
+          ],
+          "purchase_order_reference": {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "page": 1,
+            "raw_value": "PC-2026-0001",
+            "value": "PC-2026-0001"
+          },
+          "supplier_identifier": {
+            "evidence": "Identificador: FORN-0001",
+            "page": 1,
+            "raw_value": "FORN-0001",
+            "value": "FORN-0001"
+          },
+          "supplier_name": {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "page": 1,
+            "raw_value": "METALÚRGICA HORIZONTE LTDA.",
+            "value": "METALÚRGICA HORIZONTE LTDA."
+          },
+          "unsupported_elements": []
+        },
+        "item_arithmetic": [
+          {
+            "calculated_line_total": "1026.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "1026.00",
+            "quantity": "12",
+            "unit_price": "85.50"
+          },
+          {
+            "calculated_line_total": "395.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "395.00",
+            "quantity": "5",
+            "unit_price": "79.00"
+          }
+        ],
+        "items_sum_matches_printed_total_with_0_01_tolerance": true,
+        "printed_document_total": "1421.00",
+        "printed_items_sum": "1421.00"
+      },
+      "duplicate_behavior": {
+        "different_workspace": "create_document",
+        "existing_case_id": null,
+        "same_workspace": "create_document"
+      },
+      "duplicate_of_case_id": null,
+      "filename": "04_quantidade_divergente.pdf",
+      "purchase_order_reference": "PC-2026-0001",
+      "rasterization": null,
+      "sha256": "03fd52573f3966c43c800cb168d9cef62e379159231d4b13f2919c3b630aa8fe",
+      "type": "native_pdf"
+    },
+    {
+      "case_id": "05",
+      "commercial_expectation": {
+        "divergence_codes": [
+          "order_field_mismatch",
+          "order_field_mismatch"
+        ],
+        "final_status": "divergent",
+        "finding_codes": [
+          "order_field_mismatch",
+          "order_field_mismatch"
+        ],
+        "findings": [
+          {
+            "code": "order_field_mismatch",
+            "severity": "divergence"
+          },
+          {
+            "code": "order_field_mismatch",
+            "severity": "divergence"
+          }
+        ]
+      },
+      "document_truth": {
+        "absent_fields": [],
+        "evidence_checks_against_canonical_text": [
+          {
+            "evidence": "Comercial Aurora Fictícia Ltda.",
+            "field": "supplier_name",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Identificador: FORN-0099",
+            "field": "supplier_identifier",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Documento comercial: DOC-DEMO-005",
+            "field": "document_number",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Data de emissão: 10/10/2026",
+            "field": "issue_date",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "field": "purchase_order_reference",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Moeda: BRL",
+            "field": "currency",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Total do documento: R$ 1.250,00",
+            "field": "document_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          }
+        ],
+        "expected_printed_text_by_page": [
+          {
+            "page": 1,
+            "text": "DOCUMENTO FICTÍCIO PARA TESTES — SEM VALIDADE FISCAL\nComercial Aurora Fictícia Ltda.\nIdentificador: FORN-0099\nDocumento comercial: DOC-DEMO-005\nData de emissão: 10/10/2026\nPedido de compra: PC-2026-0001\nMoeda: BRL\nCódigo | Descrição | Quantidade | Preço unitário | Total\nARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00\nPAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00\nTotal do documento: R$ 1.250,00"
+          }
+        ],
+        "extracted_document": {
+          "currency": {
+            "evidence": "Moeda: BRL",
+            "page": 1,
+            "raw_value": "BRL",
+            "value": "BRL"
+          },
+          "document_number": {
+            "evidence": "Documento comercial: DOC-DEMO-005",
+            "page": 1,
+            "raw_value": "DOC-DEMO-005",
+            "value": "DOC-DEMO-005"
+          },
+          "document_total": {
+            "evidence": "Total do documento: R$ 1.250,00",
+            "page": 1,
+            "raw_value": "R$ 1.250,00",
+            "value": "1250.00"
+          },
+          "issue_date": {
+            "evidence": "Data de emissão: 10/10/2026",
+            "page": 1,
+            "raw_value": "10/10/2026",
+            "value": "2026-10-10"
+          },
+          "items": [
+            {
+              "code": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "ARR-001",
+                "value": "ARR-001"
+              },
+              "description": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "Arruela zincada M8",
+                "value": "Arruela zincada M8"
+              },
+              "line_total": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "R$ 855,00",
+                "value": "855.00"
+              },
+              "quantity": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "10",
+                "value": "10"
+              },
+              "unit_price": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "R$ 85,50",
+                "value": "85.50"
+              }
+            },
+            {
+              "code": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "PAR-002",
+                "value": "PAR-002"
+              },
+              "description": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "Parafuso sextavado M8",
+                "value": "Parafuso sextavado M8"
+              },
+              "line_total": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 395,00",
+                "value": "395.00"
+              },
+              "quantity": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "5",
+                "value": "5"
+              },
+              "unit_price": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 79,00",
+                "value": "79.00"
+              }
+            }
+          ],
+          "purchase_order_reference": {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "page": 1,
+            "raw_value": "PC-2026-0001",
+            "value": "PC-2026-0001"
+          },
+          "supplier_identifier": {
+            "evidence": "Identificador: FORN-0099",
+            "page": 1,
+            "raw_value": "FORN-0099",
+            "value": "FORN-0099"
+          },
+          "supplier_name": {
+            "evidence": "Comercial Aurora Fictícia Ltda.",
+            "page": 1,
+            "raw_value": "Comercial Aurora Fictícia Ltda.",
+            "value": "Comercial Aurora Fictícia Ltda."
+          },
+          "unsupported_elements": []
+        },
+        "item_arithmetic": [
+          {
+            "calculated_line_total": "855.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "855.00",
+            "quantity": "10",
+            "unit_price": "85.50"
+          },
+          {
+            "calculated_line_total": "395.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "395.00",
+            "quantity": "5",
+            "unit_price": "79.00"
+          }
+        ],
+        "items_sum_matches_printed_total_with_0_01_tolerance": true,
+        "printed_document_total": "1250.00",
+        "printed_items_sum": "1250.00"
+      },
+      "duplicate_behavior": {
+        "different_workspace": "create_document",
+        "existing_case_id": null,
+        "same_workspace": "create_document"
+      },
+      "duplicate_of_case_id": null,
+      "filename": "05_fornecedor_divergente.pdf",
+      "purchase_order_reference": "PC-2026-0001",
+      "rasterization": null,
+      "sha256": "10408330ed1657dc5a62e06ef091ab1a90a77d45c2613d1f09bb9ff408fb3584",
+      "type": "native_pdf"
+    },
+    {
+      "case_id": "06",
+      "commercial_expectation": {
+        "divergence_codes": [],
+        "final_status": "blocked",
+        "finding_codes": [
+          "missing_required_field",
+          "missing_evidence"
+        ],
+        "findings": [
+          {
+            "code": "missing_required_field",
+            "severity": "blocking_error"
+          },
+          {
+            "code": "missing_evidence",
+            "severity": "blocking_error"
+          }
+        ]
+      },
+      "document_truth": {
+        "absent_fields": [
+          "document_number"
+        ],
+        "evidence_checks_against_canonical_text": [
+          {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "field": "supplier_name",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Identificador: FORN-0001",
+            "field": "supplier_identifier",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": null,
+            "field": "document_number",
+            "matches_canonical_text_after_space_normalization": false,
+            "page": null
+          },
+          {
+            "evidence": "Data de emissão: 10/10/2026",
+            "field": "issue_date",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "field": "purchase_order_reference",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Moeda: BRL",
+            "field": "currency",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Total do documento: R$ 1.250,00",
+            "field": "document_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          }
+        ],
+        "expected_printed_text_by_page": [
+          {
+            "page": 1,
+            "text": "DOCUMENTO FICTÍCIO PARA TESTES — SEM VALIDADE FISCAL\nMETALÚRGICA HORIZONTE LTDA.\nIdentificador: FORN-0001\nData de emissão: 10/10/2026\nPedido de compra: PC-2026-0001\nMoeda: BRL\nCódigo | Descrição | Quantidade | Preço unitário | Total\nARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00\nPAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00\nTotal do documento: R$ 1.250,00"
+          }
+        ],
+        "extracted_document": {
+          "currency": {
+            "evidence": "Moeda: BRL",
+            "page": 1,
+            "raw_value": "BRL",
+            "value": "BRL"
+          },
+          "document_number": {
+            "evidence": null,
+            "page": null,
+            "raw_value": null,
+            "value": null
+          },
+          "document_total": {
+            "evidence": "Total do documento: R$ 1.250,00",
+            "page": 1,
+            "raw_value": "R$ 1.250,00",
+            "value": "1250.00"
+          },
+          "issue_date": {
+            "evidence": "Data de emissão: 10/10/2026",
+            "page": 1,
+            "raw_value": "10/10/2026",
+            "value": "2026-10-10"
+          },
+          "items": [
+            {
+              "code": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "ARR-001",
+                "value": "ARR-001"
+              },
+              "description": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "Arruela zincada M8",
+                "value": "Arruela zincada M8"
+              },
+              "line_total": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "R$ 855,00",
+                "value": "855.00"
+              },
+              "quantity": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "10",
+                "value": "10"
+              },
+              "unit_price": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "R$ 85,50",
+                "value": "85.50"
+              }
+            },
+            {
+              "code": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "PAR-002",
+                "value": "PAR-002"
+              },
+              "description": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "Parafuso sextavado M8",
+                "value": "Parafuso sextavado M8"
+              },
+              "line_total": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 395,00",
+                "value": "395.00"
+              },
+              "quantity": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "5",
+                "value": "5"
+              },
+              "unit_price": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 79,00",
+                "value": "79.00"
+              }
+            }
+          ],
+          "purchase_order_reference": {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "page": 1,
+            "raw_value": "PC-2026-0001",
+            "value": "PC-2026-0001"
+          },
+          "supplier_identifier": {
+            "evidence": "Identificador: FORN-0001",
+            "page": 1,
+            "raw_value": "FORN-0001",
+            "value": "FORN-0001"
+          },
+          "supplier_name": {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "page": 1,
+            "raw_value": "METALÚRGICA HORIZONTE LTDA.",
+            "value": "METALÚRGICA HORIZONTE LTDA."
+          },
+          "unsupported_elements": []
+        },
+        "item_arithmetic": [
+          {
+            "calculated_line_total": "855.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "855.00",
+            "quantity": "10",
+            "unit_price": "85.50"
+          },
+          {
+            "calculated_line_total": "395.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "395.00",
+            "quantity": "5",
+            "unit_price": "79.00"
+          }
+        ],
+        "items_sum_matches_printed_total_with_0_01_tolerance": true,
+        "printed_document_total": "1250.00",
+        "printed_items_sum": "1250.00"
+      },
+      "duplicate_behavior": {
+        "different_workspace": "create_document",
+        "existing_case_id": null,
+        "same_workspace": "create_document"
+      },
+      "duplicate_of_case_id": null,
+      "filename": "06_numero_ausente.pdf",
+      "purchase_order_reference": "PC-2026-0001",
+      "rasterization": null,
+      "sha256": "d4d5393e9aedde724cce9e63fbffdd30df9d69ecd2b6df09f9aca9a32b77dd43",
+      "type": "native_pdf"
+    },
+    {
+      "case_id": "07",
+      "commercial_expectation": {
+        "divergence_codes": [],
+        "final_status": "blocked",
+        "finding_codes": [
+          "missing_required_field",
+          "missing_evidence",
+          "invalid_date"
+        ],
+        "findings": [
+          {
+            "code": "missing_required_field",
+            "severity": "blocking_error"
+          },
+          {
+            "code": "missing_evidence",
+            "severity": "blocking_error"
+          },
+          {
+            "code": "invalid_date",
+            "severity": "blocking_error"
+          }
+        ]
+      },
+      "document_truth": {
+        "absent_fields": [
+          "issue_date"
+        ],
+        "evidence_checks_against_canonical_text": [
+          {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "field": "supplier_name",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Identificador: FORN-0001",
+            "field": "supplier_identifier",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Documento comercial: DOC-DEMO-007",
+            "field": "document_number",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": null,
+            "field": "issue_date",
+            "matches_canonical_text_after_space_normalization": false,
+            "page": null
+          },
+          {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "field": "purchase_order_reference",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Moeda: BRL",
+            "field": "currency",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Total do documento: R$ 1.250,00",
+            "field": "document_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          }
+        ],
+        "expected_printed_text_by_page": [
+          {
+            "page": 1,
+            "text": "DOCUMENTO FICTÍCIO PARA TESTES — SEM VALIDADE FISCAL\nMETALÚRGICA HORIZONTE LTDA.\nIdentificador: FORN-0001\nDocumento comercial: DOC-DEMO-007\nPedido de compra: PC-2026-0001\nMoeda: BRL\nCódigo | Descrição | Quantidade | Preço unitário | Total\nARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00\nPAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00\nTotal do documento: R$ 1.250,00"
+          }
+        ],
+        "extracted_document": {
+          "currency": {
+            "evidence": "Moeda: BRL",
+            "page": 1,
+            "raw_value": "BRL",
+            "value": "BRL"
+          },
+          "document_number": {
+            "evidence": "Documento comercial: DOC-DEMO-007",
+            "page": 1,
+            "raw_value": "DOC-DEMO-007",
+            "value": "DOC-DEMO-007"
+          },
+          "document_total": {
+            "evidence": "Total do documento: R$ 1.250,00",
+            "page": 1,
+            "raw_value": "R$ 1.250,00",
+            "value": "1250.00"
+          },
+          "issue_date": {
+            "evidence": null,
+            "page": null,
+            "raw_value": null,
+            "value": null
+          },
+          "items": [
+            {
+              "code": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "ARR-001",
+                "value": "ARR-001"
+              },
+              "description": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "Arruela zincada M8",
+                "value": "Arruela zincada M8"
+              },
+              "line_total": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "R$ 855,00",
+                "value": "855.00"
+              },
+              "quantity": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "10",
+                "value": "10"
+              },
+              "unit_price": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "R$ 85,50",
+                "value": "85.50"
+              }
+            },
+            {
+              "code": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "PAR-002",
+                "value": "PAR-002"
+              },
+              "description": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "Parafuso sextavado M8",
+                "value": "Parafuso sextavado M8"
+              },
+              "line_total": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 395,00",
+                "value": "395.00"
+              },
+              "quantity": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "5",
+                "value": "5"
+              },
+              "unit_price": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 79,00",
+                "value": "79.00"
+              }
+            }
+          ],
+          "purchase_order_reference": {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "page": 1,
+            "raw_value": "PC-2026-0001",
+            "value": "PC-2026-0001"
+          },
+          "supplier_identifier": {
+            "evidence": "Identificador: FORN-0001",
+            "page": 1,
+            "raw_value": "FORN-0001",
+            "value": "FORN-0001"
+          },
+          "supplier_name": {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "page": 1,
+            "raw_value": "METALÚRGICA HORIZONTE LTDA.",
+            "value": "METALÚRGICA HORIZONTE LTDA."
+          },
+          "unsupported_elements": []
+        },
+        "item_arithmetic": [
+          {
+            "calculated_line_total": "855.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "855.00",
+            "quantity": "10",
+            "unit_price": "85.50"
+          },
+          {
+            "calculated_line_total": "395.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "395.00",
+            "quantity": "5",
+            "unit_price": "79.00"
+          }
+        ],
+        "items_sum_matches_printed_total_with_0_01_tolerance": true,
+        "printed_document_total": "1250.00",
+        "printed_items_sum": "1250.00"
+      },
+      "duplicate_behavior": {
+        "different_workspace": "create_document",
+        "existing_case_id": null,
+        "same_workspace": "create_document"
+      },
+      "duplicate_of_case_id": null,
+      "filename": "07_data_ausente.pdf",
+      "purchase_order_reference": "PC-2026-0001",
+      "rasterization": null,
+      "sha256": "fa803d142341ea132a16cc445c6f74bc069378965b5cad7298c2c121e222e4b6",
+      "type": "native_pdf"
+    },
+    {
+      "case_id": "08",
+      "commercial_expectation": {
+        "divergence_codes": [],
+        "final_status": "ready_for_review",
+        "finding_codes": [],
+        "findings": []
+      },
+      "document_truth": {
+        "absent_fields": [],
+        "evidence_checks_against_canonical_text": [
+          {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "field": "supplier_name",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Identificador: FORN-0001",
+            "field": "supplier_identifier",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Documento comercial: DOC-DEMO-008",
+            "field": "document_number",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Data de emissão: 10/10/2026",
+            "field": "issue_date",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "field": "purchase_order_reference",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Moeda: BRL",
+            "field": "currency",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Total do documento: R$ 1.250,00",
+            "field": "document_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          }
+        ],
+        "expected_printed_text_by_page": [
+          {
+            "page": 1,
+            "text": "DOCUMENTO FICTÍCIO PARA TESTES — SEM VALIDADE FISCAL\nMETALÚRGICA HORIZONTE LTDA.\nIdentificador: FORN-0001\nDocumento comercial: DOC-DEMO-008\nData de emissão: 10/10/2026\nPedido de compra: PC-2026-0001\nMoeda: BRL\nCódigo | Descrição | Quantidade | Preço unitário | Total\nARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00\nPAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00\nTotal do documento: R$ 1.250,00"
+          }
+        ],
+        "extracted_document": {
+          "currency": {
+            "evidence": "Moeda: BRL",
+            "page": 1,
+            "raw_value": "BRL",
+            "value": "BRL"
+          },
+          "document_number": {
+            "evidence": "Documento comercial: DOC-DEMO-008",
+            "page": 1,
+            "raw_value": "DOC-DEMO-008",
+            "value": "DOC-DEMO-008"
+          },
+          "document_total": {
+            "evidence": "Total do documento: R$ 1.250,00",
+            "page": 1,
+            "raw_value": "R$ 1.250,00",
+            "value": "1250.00"
+          },
+          "issue_date": {
+            "evidence": "Data de emissão: 10/10/2026",
+            "page": 1,
+            "raw_value": "10/10/2026",
+            "value": "2026-10-10"
+          },
+          "items": [
+            {
+              "code": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "ARR-001",
+                "value": "ARR-001"
+              },
+              "description": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "Arruela zincada M8",
+                "value": "Arruela zincada M8"
+              },
+              "line_total": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "R$ 855,00",
+                "value": "855.00"
+              },
+              "quantity": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "10",
+                "value": "10"
+              },
+              "unit_price": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "R$ 85,50",
+                "value": "85.50"
+              }
+            },
+            {
+              "code": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "PAR-002",
+                "value": "PAR-002"
+              },
+              "description": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "Parafuso sextavado M8",
+                "value": "Parafuso sextavado M8"
+              },
+              "line_total": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 395,00",
+                "value": "395.00"
+              },
+              "quantity": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "5",
+                "value": "5"
+              },
+              "unit_price": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 79,00",
+                "value": "79.00"
+              }
+            }
+          ],
+          "purchase_order_reference": {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "page": 1,
+            "raw_value": "PC-2026-0001",
+            "value": "PC-2026-0001"
+          },
+          "supplier_identifier": {
+            "evidence": "Identificador: FORN-0001",
+            "page": 1,
+            "raw_value": "FORN-0001",
+            "value": "FORN-0001"
+          },
+          "supplier_name": {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "page": 1,
+            "raw_value": "METALÚRGICA HORIZONTE LTDA.",
+            "value": "METALÚRGICA HORIZONTE LTDA."
+          },
+          "unsupported_elements": []
+        },
+        "item_arithmetic": [
+          {
+            "calculated_line_total": "855.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "855.00",
+            "quantity": "10",
+            "unit_price": "85.50"
+          },
+          {
+            "calculated_line_total": "395.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "395.00",
+            "quantity": "5",
+            "unit_price": "79.00"
+          }
+        ],
+        "items_sum_matches_printed_total_with_0_01_tolerance": true,
+        "printed_document_total": "1250.00",
+        "printed_items_sum": "1250.00"
+      },
+      "duplicate_behavior": {
+        "different_workspace": "create_document",
+        "existing_case_id": null,
+        "same_workspace": "create_document"
+      },
+      "duplicate_of_case_id": null,
+      "filename": "08_correto_digitalizado.pdf",
+      "purchase_order_reference": "PC-2026-0001",
+      "rasterization": {
+        "color_mode": "grayscale",
+        "dpi": 200,
+        "rotation_degrees": null
+      },
+      "sha256": "57117ba2b16f2feac825976541637c43a447ebc420835e7834735afcbac65b68",
+      "type": "scanned_pdf"
+    },
+    {
+      "case_id": "09",
+      "commercial_expectation": {
+        "divergence_codes": [],
+        "final_status": "ready_for_review",
+        "finding_codes": [],
+        "findings": []
+      },
+      "document_truth": {
+        "absent_fields": [],
+        "evidence_checks_against_canonical_text": [
+          {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "field": "supplier_name",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Identificador: FORN-0001",
+            "field": "supplier_identifier",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Documento comercial: DOC-DEMO-009",
+            "field": "document_number",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Data de emissão: 10/10/2026",
+            "field": "issue_date",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "field": "purchase_order_reference",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Moeda: BRL",
+            "field": "currency",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Total do documento: R$ 1.250,00",
+            "field": "document_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          }
+        ],
+        "expected_printed_text_by_page": [
+          {
+            "page": 1,
+            "text": "DOCUMENTO FICTÍCIO PARA TESTES — SEM VALIDADE FISCAL\nMETALÚRGICA HORIZONTE LTDA.\nIdentificador: FORN-0001\nDocumento comercial: DOC-DEMO-009\nData de emissão: 10/10/2026\nPedido de compra: PC-2026-0001\nMoeda: BRL\nCódigo | Descrição | Quantidade | Preço unitário | Total\nARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00\nPAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00\nTotal do documento: R$ 1.250,00"
+          }
+        ],
+        "extracted_document": {
+          "currency": {
+            "evidence": "Moeda: BRL",
+            "page": 1,
+            "raw_value": "BRL",
+            "value": "BRL"
+          },
+          "document_number": {
+            "evidence": "Documento comercial: DOC-DEMO-009",
+            "page": 1,
+            "raw_value": "DOC-DEMO-009",
+            "value": "DOC-DEMO-009"
+          },
+          "document_total": {
+            "evidence": "Total do documento: R$ 1.250,00",
+            "page": 1,
+            "raw_value": "R$ 1.250,00",
+            "value": "1250.00"
+          },
+          "issue_date": {
+            "evidence": "Data de emissão: 10/10/2026",
+            "page": 1,
+            "raw_value": "10/10/2026",
+            "value": "2026-10-10"
+          },
+          "items": [
+            {
+              "code": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "ARR-001",
+                "value": "ARR-001"
+              },
+              "description": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "Arruela zincada M8",
+                "value": "Arruela zincada M8"
+              },
+              "line_total": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "R$ 855,00",
+                "value": "855.00"
+              },
+              "quantity": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "10",
+                "value": "10"
+              },
+              "unit_price": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "R$ 85,50",
+                "value": "85.50"
+              }
+            },
+            {
+              "code": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "PAR-002",
+                "value": "PAR-002"
+              },
+              "description": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "Parafuso sextavado M8",
+                "value": "Parafuso sextavado M8"
+              },
+              "line_total": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 395,00",
+                "value": "395.00"
+              },
+              "quantity": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "5",
+                "value": "5"
+              },
+              "unit_price": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 79,00",
+                "value": "79.00"
+              }
+            }
+          ],
+          "purchase_order_reference": {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "page": 1,
+            "raw_value": "PC-2026-0001",
+            "value": "PC-2026-0001"
+          },
+          "supplier_identifier": {
+            "evidence": "Identificador: FORN-0001",
+            "page": 1,
+            "raw_value": "FORN-0001",
+            "value": "FORN-0001"
+          },
+          "supplier_name": {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "page": 1,
+            "raw_value": "METALÚRGICA HORIZONTE LTDA.",
+            "value": "METALÚRGICA HORIZONTE LTDA."
+          },
+          "unsupported_elements": []
+        },
+        "item_arithmetic": [
+          {
+            "calculated_line_total": "855.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "855.00",
+            "quantity": "10",
+            "unit_price": "85.50"
+          },
+          {
+            "calculated_line_total": "395.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "395.00",
+            "quantity": "5",
+            "unit_price": "79.00"
+          }
+        ],
+        "items_sum_matches_printed_total_with_0_01_tolerance": true,
+        "printed_document_total": "1250.00",
+        "printed_items_sum": "1250.00"
+      },
+      "duplicate_behavior": {
+        "different_workspace": "create_document",
+        "existing_case_id": null,
+        "same_workspace": "create_document"
+      },
+      "duplicate_of_case_id": null,
+      "filename": "09_correto_foto.png",
+      "purchase_order_reference": "PC-2026-0001",
+      "rasterization": {
+        "color_mode": "grayscale",
+        "dpi": 200,
+        "rotation_degrees": 0.0135
+      },
+      "sha256": "72975c07850f2276df1c14cc3861d622cf461b4b6c361f20edb11f0534e502ad",
+      "type": "image"
+    },
+    {
+      "case_id": "10",
+      "commercial_expectation": {
+        "divergence_codes": [],
+        "final_status": "ready_for_review",
+        "finding_codes": [],
+        "findings": []
+      },
+      "document_truth": {
+        "absent_fields": [],
+        "evidence_checks_against_canonical_text": [
+          {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "field": "supplier_name",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Identificador: FORN-0001",
+            "field": "supplier_identifier",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Documento comercial: DOC-DEMO-001",
+            "field": "document_number",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Data de emissão: 10/10/2026",
+            "field": "issue_date",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "field": "purchase_order_reference",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Moeda: BRL",
+            "field": "currency",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "Total do documento: R$ 1.250,00",
+            "field": "document_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+            "field": "items[1].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].code",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].description",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].quantity",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].unit_price",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          },
+          {
+            "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+            "field": "items[2].line_total",
+            "matches_canonical_text_after_space_normalization": true,
+            "page": 1
+          }
+        ],
+        "expected_printed_text_by_page": [
+          {
+            "page": 1,
+            "text": "DOCUMENTO FICTÍCIO PARA TESTES — SEM VALIDADE FISCAL\nMETALÚRGICA HORIZONTE LTDA.\nIdentificador: FORN-0001\nDocumento comercial: DOC-DEMO-001\nData de emissão: 10/10/2026\nPedido de compra: PC-2026-0001\nMoeda: BRL\nCódigo | Descrição | Quantidade | Preço unitário | Total\nARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00\nPAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00\nTotal do documento: R$ 1.250,00"
+          }
+        ],
+        "extracted_document": {
+          "currency": {
+            "evidence": "Moeda: BRL",
+            "page": 1,
+            "raw_value": "BRL",
+            "value": "BRL"
+          },
+          "document_number": {
+            "evidence": "Documento comercial: DOC-DEMO-001",
+            "page": 1,
+            "raw_value": "DOC-DEMO-001",
+            "value": "DOC-DEMO-001"
+          },
+          "document_total": {
+            "evidence": "Total do documento: R$ 1.250,00",
+            "page": 1,
+            "raw_value": "R$ 1.250,00",
+            "value": "1250.00"
+          },
+          "issue_date": {
+            "evidence": "Data de emissão: 10/10/2026",
+            "page": 1,
+            "raw_value": "10/10/2026",
+            "value": "2026-10-10"
+          },
+          "items": [
+            {
+              "code": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "ARR-001",
+                "value": "ARR-001"
+              },
+              "description": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "Arruela zincada M8",
+                "value": "Arruela zincada M8"
+              },
+              "line_total": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "R$ 855,00",
+                "value": "855.00"
+              },
+              "quantity": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "10",
+                "value": "10"
+              },
+              "unit_price": {
+                "evidence": "ARR-001 | Arruela zincada M8 | 10 | R$ 85,50 | R$ 855,00",
+                "page": 1,
+                "raw_value": "R$ 85,50",
+                "value": "85.50"
+              }
+            },
+            {
+              "code": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "PAR-002",
+                "value": "PAR-002"
+              },
+              "description": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "Parafuso sextavado M8",
+                "value": "Parafuso sextavado M8"
+              },
+              "line_total": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 395,00",
+                "value": "395.00"
+              },
+              "quantity": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "5",
+                "value": "5"
+              },
+              "unit_price": {
+                "evidence": "PAR-002 | Parafuso sextavado M8 | 5 | R$ 79,00 | R$ 395,00",
+                "page": 1,
+                "raw_value": "R$ 79,00",
+                "value": "79.00"
+              }
+            }
+          ],
+          "purchase_order_reference": {
+            "evidence": "Pedido de compra: PC-2026-0001",
+            "page": 1,
+            "raw_value": "PC-2026-0001",
+            "value": "PC-2026-0001"
+          },
+          "supplier_identifier": {
+            "evidence": "Identificador: FORN-0001",
+            "page": 1,
+            "raw_value": "FORN-0001",
+            "value": "FORN-0001"
+          },
+          "supplier_name": {
+            "evidence": "METALÚRGICA HORIZONTE LTDA.",
+            "page": 1,
+            "raw_value": "METALÚRGICA HORIZONTE LTDA.",
+            "value": "METALÚRGICA HORIZONTE LTDA."
+          },
+          "unsupported_elements": []
+        },
+        "item_arithmetic": [
+          {
+            "calculated_line_total": "855.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "855.00",
+            "quantity": "10",
+            "unit_price": "85.50"
+          },
+          {
+            "calculated_line_total": "395.00",
+            "matches_with_0_01_tolerance": true,
+            "printed_line_total": "395.00",
+            "quantity": "5",
+            "unit_price": "79.00"
+          }
+        ],
+        "items_sum_matches_printed_total_with_0_01_tolerance": true,
+        "printed_document_total": "1250.00",
+        "printed_items_sum": "1250.00"
+      },
+      "duplicate_behavior": {
+        "different_workspace": "create_document",
+        "existing_case_id": "01",
+        "same_workspace": "return_existing_document"
+      },
+      "duplicate_of_case_id": "01",
+      "filename": "10_duplicata_exata.pdf",
+      "purchase_order_reference": "PC-2026-0001",
+      "rasterization": null,
+      "sha256": "6f6c4e61566e58c4507701508aa10c92c63c078bf93826c47f81deb035ea541e",
+      "type": "native_pdf"
+    }
+  ],
+  "commercial_policy": {
+    "currency_tolerances": {},
+    "default_total_tolerance": "0.01",
+    "version": 0
+  },
+  "commercial_policy_description": "Política padrão atual, versão 0, tolerância de totais padrão BRL 0.01; nenhuma sobrescrita de moeda.",
+  "evidence_normalization": "A comparação do gabarito normaliza espaços com backend.app.evidence.normalize_spaces: colapsa espaços consecutivos e remove bordas. Isso não altera a validação de produção.",
+  "limits": {
+    "max_pages": 5,
+    "max_upload_bytes": 10485760
+  },
+  "manifest_version": 1,
+  "reference_order": {
+    "currency": "BRL",
+    "items": [
+      {
+        "code": "ARR-001",
+        "description": "Arruela zincada M8",
+        "line_total": "855.00",
+        "quantity": "10",
+        "unit_price": "85.50"
+      },
+      {
+        "code": "PAR-002",
+        "description": "Parafuso sextavado M8",
+        "line_total": "395.00",
+        "quantity": "5",
+        "unit_price": "79.00"
+      }
+    ],
+    "reference": "PC-2026-0001",
+    "supplier_identifier": "FORN-0001",
+    "supplier_name": "Metalúrgica Horizonte Ltda.",
+    "total": "1250.00"
+  }
+}

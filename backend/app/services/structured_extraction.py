@@ -6,7 +6,7 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError
 
-from backend.app.evidence import evidence_is_on_page
+from backend.app.evidence import document_number_evidence_identifies_value, evidence_is_on_page
 from backend.app.schemas import DocumentItem, ExtractedField, ReferenceDocument
 from backend.app.services.pdf_text_extractor import PageText
 
@@ -72,6 +72,7 @@ class StructuredExtractionService:
                 f"A resposta não corresponde ao schema do documento. Confira os campos: {details}.",
             ) from None
 
+        self._discard_document_number_without_specific_evidence(document)
         self._verify_evidence(document, text_by_page)
         return document
 
@@ -111,6 +112,7 @@ class StructuredExtractionService:
             "Quantidades e valores monetários em value devem ser strings decimais com ponto; datas devem usar AAAA-MM-DD. "
             "Use null em raw_value, value, page e evidence quando um campo estiver ausente. "
             "Para cada valor encontrado, retorne uma evidência literal do texto e o número da página indicado no mapa. "
+            "Para document_number, a própria evidência deve incluir um rótulo claro de número do documento, nota fiscal ou invoice; nunca use uma referência de pedido ou ordem de compra como esse campo. "
             "Não calcule totais. "
             "unsupported_elements deve listar impostos, descontos, frete ou outros elementos fora do caso simples.\n\n"
             f"JSON Schema de saída:\n{json.dumps(schema, ensure_ascii=False)}\n\n"
@@ -166,3 +168,16 @@ class StructuredExtractionService:
                     "evidence_not_found",
                     f"A evidência do campo {name} não aparece no texto da página {field.page}.",
                 )
+
+    @staticmethod
+    def _discard_document_number_without_specific_evidence(document: ReferenceDocument) -> None:
+        field = document.document_number
+        if not any((field.raw_value, field.value, field.page, field.evidence)):
+            return
+        if not document_number_evidence_identifies_value(field.value, field.evidence):
+            document.document_number = ExtractedField(
+                raw_value=None,
+                value=None,
+                page=None,
+                evidence=None,
+            )

@@ -1,6 +1,6 @@
 # DocuFlow — caso de referência do fluxo mínimo
 
-Este documento fixa um único caso de sucesso para orientar o primeiro fluxo vertical. Os dados são fictícios. O arquivo de exemplo será criado como PDF com texto na etapa de implementação; por enquanto, o conteúdo abaixo é a fonte de verdade do gabarito.
+Este documento fixa o caso comercial base do primeiro fluxo vertical. Todos os dados são fictícios. O arquivo de entrada atual é [`samples/documents/01_correto.pdf`](../samples/documents/01_correto.pdf); o conjunto de dez casos e seu manifesto reproduzível estão descritos em [`samples/README.md`](../samples/README.md). O manifesto, não este exemplo ilustrativo de JSON, registra os valores efetivamente impressos e os resultados comerciais calculados pelas regras atuais.
 
 ## 1. Pedido de compra
 
@@ -18,13 +18,15 @@ Valores monetários e quantidades são apresentados como strings decimais no con
 
 ## 2. Documento comercial fictício
 
-**Arquivo:** `fornecedor_horizonte_doc-2026-1042.pdf`  
+**Arquivo:** `samples/documents/01_correto.pdf`
+
 **Uma página, texto nativo, sem imposto, desconto ou frete.**
 
 ```text
+DOCUMENTO FICTÍCIO PARA TESTES — SEM VALIDADE FISCAL
 METALÚRGICA HORIZONTE LTDA.
 Identificador: FORN-0001
-Documento comercial: DOC-2026-1042
+Documento comercial: DOC-DEMO-001
 Data de emissão: 10/10/2026
 Pedido de compra: PC-2026-0001
 Moeda: BRL
@@ -55,10 +57,10 @@ O modelo retorna JSON com valores originais e normalizados separados. `value` é
     "evidence": "Identificador: FORN-0001"
   },
   "document_number": {
-    "raw_value": "DOC-2026-1042",
-    "value": "DOC-2026-1042",
+    "raw_value": "DOC-DEMO-001",
+    "value": "DOC-DEMO-001",
     "page": 1,
-    "evidence": "Documento comercial: DOC-2026-1042"
+    "evidence": "Documento comercial: DOC-DEMO-001"
   },
   "issue_date": {
     "raw_value": "10/10/2026",
@@ -118,18 +120,24 @@ O modelo retorna JSON com valores originais e normalizados separados. `value` é
 8. Cada evidência aponta para a página 1 e pode ser localizada no texto extraído dessa página após normalização de espaços.
 9. Com as regras satisfeitas e sem elementos não suportados, o resultado fica pronto para revisão humana; isso não aprova nem lança o documento automaticamente.
 
-## 5. Critérios de aceite do fluxo mínimo
+## 5. Status e evidências dos critérios
 
-- [ ] Um operador envia o PDF de exemplo associado ao pedido `PC-2026-0001`.
-- [ ] A API valida tipo, leitura e limite de arquivo; rejeita arquivo inválido com mensagem compreensível.
-- [ ] O sistema extrai o texto da página 1 sem OCR e preserva o texto por página.
-- [ ] A extração estruturada valida contra o schema Pydantic e guarda valor original, valor normalizado e evidência.
-- [ ] Se o JSON do modelo for inválido ou uma evidência não existir na página indicada, o documento não fica pronto para revisão e recebe um erro explícito.
-- [ ] As regras usam `Decimal`, identificam a igualdade de fornecedor/pedido/itens e conferem os totais com tolerância de `R$ 0,01`.
-- [ ] O documento aparece como `ready_for_review` com os dados extraídos, evidências, pedido associado e resultado das validações.
-- [ ] O caso correto não é aprovado nem enviado ao mini ERP automaticamente.
-- [ ] Testes automatizados desse fluxo usam um provedor de IA simulado; não exigem Ollama em execução.
+“Implementado” indica comportamento presente no código; “testado automaticamente” aponta cobertura automatizada. “Validação manual” informa se há registro no repositório. A edição desta documentação não executou serviços nem dados de aplicação.
 
-## 6. Fora deste primeiro fluxo
+| Critério | Implementado | Testado automaticamente | Validação manual registrada |
+|---|---|---|---|
+| Operador envia arquivo e pedido de referência | Sim, `POST /documents/analyze` e associação autenticada ao workspace | `test_full_reference_flow_returns_review_result_without_pdf_bytes`; `test_valid_upload_calls_processing_service_and_returns_typed_result` | Não consta neste repositório |
+| Tipo, leitura, tamanho e arquivo inválido | Sim, API limita upload e extrator valida o documento | `test_unsupported_media_type_is_rejected_before_processing`; `test_oversized_upload_is_rejected_before_processing`; `test_invalid_pdf_content_returns_clear_client_error` | Não consta neste repositório |
+| PDF nativo separado por página | Sim; páginas preservam texto e origem | `test_extracts_reference_document_text_on_page_one`; `test_keeps_text_split_in_page_order` | Não consta neste repositório |
+| Schema estrito, valores originais/normalizados e evidência | Sim; campos passam pelo schema Pydantic e a evidência é conferida na página indicada | `test_valid_response_uses_existing_schema_and_business_validation`; `test_schema_rejects_unexpected_properties_and_numeric_values`; `test_evidence_must_appear_on_indicated_page` | Não consta neste repositório |
+| Campos obrigatórios, data, dinheiro, quantidades e totais | Sim; cálculos monetários usam `Decimal` e tolerância padrão de `0.01` | `test_reference_case_is_ready_for_human_review`; `test_missing_required_field_is_blocking`; `test_invalid_date_is_blocking`; `test_incorrect_line_total_is_divergence`; `test_incorrect_document_total_is_divergence` | Não consta neste repositório |
+| Resultado pronto para revisão, sem aprovação automática | Sim; processamento e revisão são estados distintos | `test_full_reference_flow_returns_review_result_without_pdf_bytes`; `test_commercial_divergence_is_returned_without_approval` | Não consta neste repositório |
+| Teste sem serviço de IA obrigatório | Sim; os serviços aceitam provedor injetado | `test_extraction_provider_can_be_injected_without_ollama`; `test_valid_response_uses_existing_schema_and_business_validation` | Não consta neste repositório |
 
-Sem OCR, Redis/RQ, mini ERP, Playwright, interface React, autenticação completa ou múltiplos provedores. Essas partes entram em etapas posteriores, depois de validar este caminho básico.
+O workflow Playwright automatiza etapas de login, upload, revisão, aprovação e envio simulado em Chromium, mas continua sendo teste automatizado da aplicação. Ele não constitui validação manual de usuário nem valida ERP externo ou emissão fiscal. A configuração de VPS também não equivale a deploy público validado.
+
+## 6. Escopo atual e limitações
+
+OCR local, autenticação, Redis/RQ, interface React, revisão humana, Playwright, auditoria, painel, importação CSV, atribuição, regras versionadas e adaptador ERP demonstrativo foram adicionados depois do fluxo mínimo e estão descritos em [funcionalidades e contratos](funcionalidades.md).
+
+O ERP permanece simulado por `DemoERPClient`: não há emissão fiscal, RPA contra ERP externo ou reconciliação depois de lançamento externo. O avaliador permite executar uma avaliação manual com modelo local sobre a amostra sintética; os testes automatizados usam provedores determinísticos e não demonstram taxa de acerto geral ou em produção.

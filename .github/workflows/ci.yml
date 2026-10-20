@@ -23,11 +23,15 @@ jobs:
         with:
           python-version: 3.14.4
           cache: pip
-          cache-dependency-path: requirements.lock
+          cache-dependency-path: |
+            requirements.lock
+            requirements-samples.txt
       - name: Install locked Python dependencies
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install -r requirements.lock
+      - name: Install optional sample-generation dependencies
+        run: .venv/bin/python -m pip install -r requirements-samples.txt
       - name: Run backend unit suite
         run: .venv/bin/python -m unittest discover -s backend/tests -v
 

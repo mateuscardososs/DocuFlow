@@ -1,0 +1,3 @@
+# Optional, offline sample generation only; never installed in runtime images.
+reportlab==5.0.1
+charset-normalizer==3.5.2

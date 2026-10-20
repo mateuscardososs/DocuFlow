@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.commercial_policy import CommercialPolicy
-from backend.app.evidence import evidence_is_on_page
+from backend.app.evidence import document_number_evidence_identifies_value, evidence_is_on_page
 from backend.app.schemas import ExtractedField, PurchaseOrder, ReferenceDocument
 
 
@@ -86,6 +86,22 @@ def validate_document(
             add("blocking_error", "evidence_page_not_found", f"Página {field.page} não encontrada para {name}.")
         elif not evidence_is_on_page(field.evidence, field.page, page_texts):
             add("blocking_error", "evidence_not_found", f"Evidência de {name} não aparece na página {field.page}.")
+
+    document_number = document.document_number
+    if (
+        document_number.value is not None
+        and document_number.page in page_texts
+        and document_number.evidence
+        and evidence_is_on_page(document_number.evidence, document_number.page, page_texts)
+        and not document_number_evidence_identifies_value(
+            document_number.value, document_number.evidence
+        )
+    ):
+        add(
+            "blocking_error",
+            "document_number_evidence_not_specific",
+            "A evidência do número do documento precisa identificar esse valor como número de documento, não como referência de pedido.",
+        )
 
     issue_date = document.issue_date.value
     try:
