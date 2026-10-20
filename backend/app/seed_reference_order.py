@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from backend.app.db import create_database
 from backend.app.models.identity import Workspace
 from backend.app.models.purchase_order import PurchaseOrderEntity, PurchaseOrderItem, Supplier
+from backend.app.reference_order_data import REFERENCE_PURCHASE_ORDER
 
 
 def seed_reference_order(session_factory: sessionmaker) -> bool:
@@ -21,7 +22,7 @@ def seed_reference_order(session_factory: sessionmaker) -> bool:
 
         existing = session.scalar(
             select(PurchaseOrderEntity).where(
-                PurchaseOrderEntity.reference == "PC-2026-0001",
+                PurchaseOrderEntity.reference == REFERENCE_PURCHASE_ORDER.reference,
                 PurchaseOrderEntity.workspace_id == workspace.id,
             )
         )
@@ -30,38 +31,32 @@ def seed_reference_order(session_factory: sessionmaker) -> bool:
 
         supplier = session.scalar(
             select(Supplier).where(
-                Supplier.identifier == "FORN-0001",
+                Supplier.identifier == REFERENCE_PURCHASE_ORDER.supplier_identifier,
                 Supplier.workspace_id == workspace.id,
             )
         )
         if supplier is None:
             supplier = Supplier(
                 workspace_id=workspace.id,
-                name="Metalúrgica Horizonte Ltda.",
-                identifier="FORN-0001",
+                name=REFERENCE_PURCHASE_ORDER.supplier_name,
+                identifier=REFERENCE_PURCHASE_ORDER.supplier_identifier,
             )
 
         order = PurchaseOrderEntity(
             workspace_id=workspace.id,
-            reference="PC-2026-0001",
+            reference=REFERENCE_PURCHASE_ORDER.reference,
             supplier=supplier,
-            currency="BRL",
-            total=Decimal("1250.00"),
+            currency=REFERENCE_PURCHASE_ORDER.currency,
+            total=Decimal(REFERENCE_PURCHASE_ORDER.total),
             items=[
                 PurchaseOrderItem(
-                    code="ARR-001",
-                    description="Arruela zincada M8",
-                    quantity=Decimal("10"),
-                    unit_price=Decimal("85.50"),
-                    line_total=Decimal("855.00"),
-                ),
-                PurchaseOrderItem(
-                    code="PAR-002",
-                    description="Parafuso sextavado M8",
-                    quantity=Decimal("5"),
-                    unit_price=Decimal("79.00"),
-                    line_total=Decimal("395.00"),
-                ),
+                    code=item.code,
+                    description=item.description,
+                    quantity=Decimal(item.quantity),
+                    unit_price=Decimal(item.unit_price),
+                    line_total=Decimal(item.line_total),
+                )
+                for item in REFERENCE_PURCHASE_ORDER.items
             ],
         )
         session.add(order)
