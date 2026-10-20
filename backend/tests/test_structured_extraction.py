@@ -2,6 +2,7 @@ import json
 import unittest
 from unittest.mock import patch
 
+from backend.app.evidence import document_number_evidence_identifies_value
 from backend.app.integrations.ollama_extraction import OllamaConfig, OllamaExtractionProvider
 from backend.app.schemas import PurchaseOrder
 from backend.app.services.structured_extraction import (
@@ -33,6 +34,29 @@ class StubProvider:
 
 
 class StructuredExtractionTests(unittest.TestCase):
+    def test_document_number_evidence_requires_a_specific_document_label(self):
+        accepted = (
+            "Documento comercial: DOC-1",
+            "Número do documento: DOC-1",
+            "Nº da nota fiscal: DOC-1",
+            "NF-e: DOC-1",
+            "Invoice number: DOC-1",
+            "Documento: DOC-1.",
+        )
+        rejected = (
+            "Pedido de compra: DOC-1",
+            "Ordem de compra: DOC-1",
+            "Referência: DOC-1",
+            "DOC-1",
+        )
+
+        for evidence in accepted:
+            with self.subTest(evidence=evidence):
+                self.assertTrue(document_number_evidence_identifies_value("DOC-1", evidence))
+        for evidence in rejected:
+            with self.subTest(evidence=evidence):
+                self.assertFalse(document_number_evidence_identifies_value("DOC-1", evidence))
+
     def test_ollama_config_reads_model_url_and_timeout_from_environment(self):
         with patch.dict(
             "os.environ",
@@ -68,6 +92,69 @@ class StructuredExtractionTests(unittest.TestCase):
         self.assertIn("Não invente", provider.last_prompt)
         self.assertEqual(provider.last_schema, type(document).model_json_schema())
         report = validate_document(document, PurchaseOrder.model_validate(purchase_order()), PAGE_TEXT)
+        self.assertEqual(report.status, "ready_for_review")
+        self.assertIn("a própria evidência deve incluir um rótulo claro", provider.last_prompt)
+
+    def test_document_number_evidence_must_not_be_only_the_purchase_order_reference(self):
+        case_06_pages = {
+            1: PAGE_TEXT[1].replace("Documento comercial: DOC-2026-1042 ", "")
+        }
+        data = reference_document()
+        data["document_number"] = {
+            "raw_value": "Pedido de compra: PC-2026-0001",
+            "value": "PC-2026-0001",
+            "page": 1,
+            "evidence": "Pedido de compra: PC-2026-0001",
+        }
+        service, _ = self.service(response=json.dumps(data, ensure_ascii=False))
+
+        document = service.extract(case_06_pages)
+        report = validate_document(
+            document, PurchaseOrder.model_validate(purchase_order()), case_06_pages
+        )
+
+        self.assertEqual(
+            document.document_number.model_dump(),
+            {"raw_value": None, "value": None, "page": None, "evidence": None},
+        )
+        self.assertEqual(report.status, "blocked")
+        self.assertTrue(any(
+            finding.code == "missing_required_field" and "document_number" in finding.message
+            for finding in report.findings
+        ))
+
+    def test_document_number_is_accepted_when_explicitly_labeled_and_order_reference_differs(self):
+        data = reference_document()
+        service, _ = self.service(response=json.dumps(data, ensure_ascii=False))
+
+        document = service.extract(PAGE_TEXT)
+
+        self.assertEqual(document.document_number.value, "DOC-2026-1042")
+        self.assertNotEqual(document.document_number.value, document.purchase_order_reference.value)
+
+    def test_equal_document_number_and_order_reference_are_allowed_with_distinct_labels(self):
+        pages = {
+            1: PAGE_TEXT[1].replace(
+                "Documento comercial: DOC-2026-1042",
+                "Documento comercial: PC-2026-0001",
+            )
+        }
+        data = reference_document()
+        data["document_number"] = {
+            "raw_value": "PC-2026-0001",
+            "value": "PC-2026-0001",
+            "page": 1,
+            "evidence": "Documento comercial: PC-2026-0001",
+        }
+        service, _ = self.service(response=json.dumps(data, ensure_ascii=False))
+
+        document = service.extract(pages)
+        report = validate_document(
+            document, PurchaseOrder.model_validate(purchase_order()), pages
+        )
+
+        self.assertEqual(document.document_number.value, "PC-2026-0001")
+        self.assertEqual(document.purchase_order_reference.value, "PC-2026-0001")
         self.assertEqual(report.status, "ready_for_review")
 
     def test_invalid_json_returns_clear_error_without_retry(self):

@@ -87,6 +87,20 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(report.status, "blocked")
         self.assertTrue(any("document_number" in finding.message for finding in report.findings))
 
+    def test_document_number_cannot_use_evidence_labeled_as_purchase_order(self):
+        data = reference_document()
+        data["document_number"] = extracted(
+            "PC-2026-0001", "PC-2026-0001", "Pedido de compra: PC-2026-0001"
+        )
+
+        report = self.validate(data)
+
+        self.assertEqual(report.status, "blocked")
+        self.assertTrue(any(
+            finding.code == "document_number_evidence_not_specific"
+            for finding in report.findings
+        ))
+
     def test_evidence_not_found_on_indicated_page_is_blocking(self):
         data = reference_document()
         data["supplier_name"]["evidence"] = "Texto que não aparece"

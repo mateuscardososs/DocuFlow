@@ -836,7 +836,7 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         )
 
         revised_payload = reference_payload()
-        revised_payload["document_number"]["value"] = "DOC-CORRIGIDO"
+        revised_payload["items"][0]["quantity"]["value"] = "9"
         review = DocumentReviewService(repository, self.repository)
         corrected = review.correct(
             document_id=document.id,
@@ -858,7 +858,7 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         with Session(self.engine) as session:
             stored = session.get(DocumentEntity, document.id)
             self.assertEqual(stored.extracted_document["document_number"]["value"], "DOC-2026-1042")
-            self.assertEqual(stored.reviewed_document["document_number"]["value"], "DOC-CORRIGIDO")
+            self.assertEqual(stored.reviewed_document["items"][0]["quantity"]["value"], "9")
             self.assertEqual(
                 session.scalar(
                     select(DocumentApprovalEntity.reviewed_version).where(

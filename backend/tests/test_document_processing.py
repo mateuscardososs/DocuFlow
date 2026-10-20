@@ -77,6 +77,31 @@ class DocumentProcessingTests(unittest.TestCase):
         self.assertEqual(provider.calls, 1)
         self.assertFalse(hasattr(result, "pdf_bytes"))
 
+    def test_case_without_document_number_stays_blocked_when_order_reference_is_misassigned(self):
+        case_06_text = REFERENCE_TEXT.replace("Documento comercial: DOC-2026-1042\n", "")
+        data = reference_payload()
+        data["document_number"] = {
+            "raw_value": "Pedido de compra: PC-2026-0001",
+            "value": "PC-2026-0001",
+            "page": 1,
+            "evidence": "Pedido de compra: PC-2026-0001",
+        }
+        service, _ = self.build_service(response=json.dumps(data, ensure_ascii=False))
+
+        result = service.process(
+            make_pdf([case_06_text]), PurchaseOrder.model_validate(purchase_order())
+        )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(
+            result.document.document_number.model_dump(),
+            {"raw_value": None, "value": None, "page": None, "evidence": None},
+        )
+        self.assertTrue(any(
+            finding.code == "missing_required_field" and "document_number" in finding.message
+            for finding in result.validation.findings
+        ))
+
     def test_commercial_divergence_is_reflected_in_final_status(self):
         data = reference_payload()
         data["items"][0]["quantity"]["value"] = "11"
